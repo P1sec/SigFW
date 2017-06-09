@@ -1,0 +1,14 @@
+[Unit]
+Description=SS7FW service
+
+[Service]
+User=p1sec
+Group=p1sec
+WorkingDirectory=/opt/SigFW/ss7fw/ss7fw.ss7fw-core_jar_1.0.0-SNAPSHOT
+ExecStart=/usr/bin/mvn exec:java -Dexec.mainClass="ss7fw.SS7Firewall"
+#Restart=always
+StandardOutput=null
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

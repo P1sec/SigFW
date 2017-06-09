@@ -1,0 +1,14 @@
+[Unit]
+Description=tshark to elasticsearch
+
+[Service]
+User=p1sec
+Group=p1sec
+WorkingDirectory=/opt/SigFW/VM/
+ExecStart=/opt/SigFW/VM/tshark_to_ek.sh
+#Restart=always
+StandardOutput=null
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

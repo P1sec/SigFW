@@ -1,0 +1,7 @@
+target/
+XmlDiameterClientLiveInput/
+XmlDiameterFirewall/
+*.last
+input/*
+127*.xml
+server*.xml
