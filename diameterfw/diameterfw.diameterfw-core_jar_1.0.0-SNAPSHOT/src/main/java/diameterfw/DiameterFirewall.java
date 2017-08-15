@@ -213,6 +213,7 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
     static final private String persistDir = "XmlDiameterFirewall";
     
     static final private int AVP_ENCRYPTED = 1100;
+    static final private int AVP_ENCRYPTED_GROUPED = 1101;
     static final private int AVP_SIGNATURE = 1000;
     
     static final private int CC_AUTO_ENCRYPTION = 999;
@@ -649,7 +650,8 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
                     a.getCode() != Avp.DESTINATION_REALM &&
                     a.getCode() != Avp.SESSION_ID &&
                     a.getCode() != Avp.ROUTE_RECORD &&
-                    a.getCode() != AVP_ENCRYPTED
+                    a.getCode() != AVP_ENCRYPTED &&
+                    a.getCode() != AVP_ENCRYPTED_GROUPED
                 ) {
                 
                 try {
@@ -696,6 +698,85 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
         }
     }
     
+        /**
+     * Method to encrypt Diameter message v2
+     * 
+     * @param message Diameter message which will be encrypted
+     * @param publicKey Public Key used for message encryption
+     */
+    public void diameterEncrypt_v2(Message message, PublicKey publicKey) throws InvalidKeyException {
+        
+        //logger.debug("== diameterEncrypt_v2 ==");
+        AvpSet avps = message.getAvps();
+        
+        AvpSet erAvp = avps.addGroupedAvp(AVP_ENCRYPTED_GROUPED);
+        
+        for (int i = 0; i < avps.size(); i++) {
+            Avp a = avps.getAvpByIndex(i);
+            
+            //logger.debug("AVP[" + i + "] Code = " + a.getCode());
+            
+            if (
+                    a.getCode() != Avp.ORIGIN_HOST &&
+                    a.getCode() != Avp.ORIGIN_REALM &&
+                    a.getCode() != Avp.DESTINATION_HOST &&
+                    a.getCode() != Avp.DESTINATION_REALM &&
+                    a.getCode() != Avp.SESSION_ID &&
+                    a.getCode() != Avp.ROUTE_RECORD &&
+                    a.getCode() != AVP_ENCRYPTED &&
+                    a.getCode() != AVP_ENCRYPTED_GROUPED
+                ) {
+                    erAvp.addAvp(a);
+                    avps.removeAvpByIndex(i);
+                    i--;
+            }
+        }
+        
+        try {
+            //byte[] d = a.getRawData();
+            byte [] d = encodeAvpSet(erAvp);
+            
+            logger.debug("avps.size = " + erAvp.size());
+            logger.debug("plainText = " + d.toString());
+            logger.debug("plainText.size = " + d.length);
+
+            // SPI(version) and TVP(timestamp)
+            byte[] SPI = {0x00, 0x00, 0x00, 0x00};  // TODO
+            byte[] TVP = {0x00, 0x00, 0x00, 0x00};
+
+            long t = System.currentTimeMillis()/100;    // in 0.1s
+            TVP[0] = (byte) ((t >> 24) & 0xFF);
+            TVP[1] = (byte) ((t >> 16) & 0xFF);
+            TVP[2] = (byte) ((t >>  8) & 0xFF);
+            TVP[3] = (byte) ((t >>  0) & 0xFF);
+
+            //DiameterFirewallConfig.cipher.init(Cipher.ENCRYPT_MODE, publicKey);
+            //byte[] cipherText = DiameterFirewallConfig.cipher.doFinal(b);
+
+            RSAPublicKey rsaPublicKey = (RSAPublicKey)publicKey;
+            DiameterFirewallConfig.cipher.init(Cipher.ENCRYPT_MODE, publicKey);
+
+            int keyLength = rsaPublicKey.getModulus().bitLength() / 8;
+
+            byte[][] datas = splitByteArray(d, keyLength - 11 - 4);
+            byte[] cipherText = null;
+            for (byte[] b : datas) {
+                cipherText = concatByteArray(cipherText, DiameterFirewallConfig.cipher.doFinal(concatByteArray(TVP, b)));
+            }
+
+            cipherText = concatByteArray(SPI, cipherText);
+
+            //logger.debug("Add AVP Grouped Encrypted. Current index");
+            avps.removeAvp(AVP_ENCRYPTED_GROUPED);
+            avps.addAvp(AVP_ENCRYPTED_GROUPED, cipherText, finished, finished);
+
+        } catch (IllegalBlockSizeException ex) {
+            java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (BadPaddingException ex) {
+            java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+    
     /**
      * Method to decrypt Diameter message
      * 
@@ -715,7 +796,7 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
             //logger.debug("AVP[" + i + "] Code = " + a.getCode());
             
             if (a.getCode() == AVP_ENCRYPTED) {
-                logger.debug("Diameter Decryption of Message");
+                logger.debug("Diameter Decryption of Encrypted AVP");
                     
                 try {
                     byte[] b = a.getOctetString();
@@ -781,6 +862,93 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
                     avps.insertAvp(i, _a.getCode(), _a.getRawData(), _a.vendorID, _a.isMandatory, finished);
                     
                     avps.removeAvpByIndex(i + 1);
+                    
+                } catch (InvalidKeyException ex) {
+                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+                } catch (IllegalBlockSizeException ex) {
+                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+                } catch (BadPaddingException ex) {
+                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+                } catch (AvpDataException ex) {
+                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+                } catch (IOException ex) {
+                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+                }
+            } else if (a.getCode() == AVP_ENCRYPTED_GROUPED) {
+                logger.debug("Diameter Decryption of Grouped Encrypted AVP");
+                    
+                try {
+                    byte[] b = a.getOctetString();
+                    
+                    // SPI(version) and TVP(timestamp)
+                    byte[] SPI = {0x00, 0x00, 0x00, 0x00};
+                    byte[] TVP = {0x00, 0x00, 0x00, 0x00};
+
+                    byte[] d = null; 
+                    if (b.length >= SPI.length) {
+                        SPI = Arrays.copyOfRange(b, 0, SPI.length);
+                        d = Arrays.copyOfRange(b, SPI.length, b.length);
+                    } else {
+                        d = b;
+                    }
+
+                    // TODO verify SPI
+
+                    PrivateKey privateKey = keyPair.getPrivate();
+                    DiameterFirewallConfig.cipher.init(Cipher.DECRYPT_MODE, privateKey);
+
+                    RSAPublicKey rsaPublicKey = (RSAPublicKey)keyPair.getPublic();
+                    int keyLength = rsaPublicKey.getModulus().bitLength() / 8;
+                    
+                    byte[][] datas = splitByteArray(d, keyLength/* - 11*/);
+                    byte[] decryptedText = null;
+                    for (byte[] _b : datas) {
+                        d = DiameterFirewallConfig.cipher.doFinal(_b);
+                        
+                        // ---- Verify TVP from Security header ----
+                        long t = System.currentTimeMillis()/100;    // in 0.1s
+                        TVP[0] = (byte) ((t >> 24) & 0xFF);
+                        TVP[1] = (byte) ((t >> 16) & 0xFF);
+                        TVP[2] = (byte) ((t >>  8) & 0xFF);
+                        TVP[3] = (byte) ((t >>  0) & 0xFF);
+                        t = 0;
+                        for (int j = 0; j < TVP.length; j++) {
+                            t =  ((t << 8) + (TVP[j] & 0xff));
+                        }
+
+                        TVP[0] = d[0]; TVP[1] = d[1]; TVP[2] = d[2]; TVP[3] = d[3];
+                        long t_tvp = 0;
+                        for (int j = 0; j < TVP.length; j++) {
+                            t_tvp =  ((t_tvp << 8) + (TVP[j] & 0xff));
+                        }
+                        if (Math.abs(t_tvp-t) > diameter_tvp_time_window*10) {
+                            return "DIAMETER FW: Blocked in decryption, Wrong timestamp in TVP (received: " + t_tvp + ", current: " + t + ")";
+                        }
+                        d = Arrays.copyOfRange(d, TVP.length, d.length);
+                        // ---- End of Verify TVP ----
+                        
+                        
+                        decryptedText = concatByteArray(decryptedText, d);
+                    }
+                   
+                    
+                    //logger.debug("Add AVP Decrypted. Current index = " + i);
+                    //AvpImpl avp = new AvpImpl(code, (short) flags, (int) vendor, rawData);
+                    
+                    //avps.insertAvp(i, ByteBuffer.wrap(cc).order(ByteOrder.BIG_ENDIAN).getInt(), d, finished, finished);
+                    
+                    //logger.debug("decryptedText = " + decryptedText.toString());
+                    //logger.debug("decryptedText.size = " + decryptedText.length);
+                    AvpSetImpl _avps = (AvpSetImpl)decodeAvpSet(decryptedText, 0);
+                    
+                    //logger.debug("SIZE = " + _avps.size());
+                    
+                    for (int j = 0; j < _avps.size(); j++) {
+                        AvpImpl _a = (AvpImpl)_avps.getAvpByIndex(j);
+                        //logger.debug("addAVP = " + _a.getCode());
+                        avps.insertAvp(i, _a.getCode(), _a.getRawData(), _a.vendorID, _a.isMandatory, finished);
+                    }
+                    avps.removeAvpByIndex(i + _avps.size());
                     
                 } catch (InvalidKeyException ex) {
                     java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
@@ -1527,6 +1695,8 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
 
                 // encrypt
                 diameterEncrypt(msg, publicKey);
+                // TODO change to v2 to use encrypted grouped AVP
+                // diameterEncrypt_v2(msg, publicKey);
             }
             // Answers without Dest-Realm, but seen previous Request
             else if (!msg.isRequest()
@@ -1540,6 +1710,8 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
 
                 // encrypt
                 diameterEncrypt(msg, publicKey);
+                // TODO change to v2 to use encrypted grouped AVP
+                // diameterEncrypt_v2(msg, publicKey);
 
                 diameter_sessions.remove(session_id);
 
@@ -1797,8 +1969,8 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
         return r;
     }
     
-    // workaround because in jDiameter AvpImpl is not public
-    // TODO submit to jDiameter to make AvpImpl public
+    // workaround because in jDiameter AvpImpl, AvpSetImpl is not public
+    // TODO submit to jDiameter to make AvpImpl, AvpSetImpl public
     private static final int INT32_SIZE = 4;
     
     public byte[] encodeAvp(Avp avp) {
@@ -1819,6 +1991,72 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
             logger.debug("Error during encode avp", e);
             return new byte[0];
         }
+    }
+    
+    
+    protected class DynamicByteArray {
+
+        private byte[] array;
+        private int size;
+
+        public DynamicByteArray(int cap) {
+          array = new byte[cap > 0 ? cap : 256];
+          size = 0;
+        }
+
+        public int get(int pos) {
+          if (pos >= size) {
+            throw new ArrayIndexOutOfBoundsException();
+          }
+          return array[pos];
+        }
+
+        public void add(byte[] bytes) {
+          if (size + bytes.length > array.length) {
+            byte[] newarray = new byte[array.length + bytes.length * 2];
+            System.arraycopy(array, 0, newarray, 0, size);
+            array = newarray;
+          }
+          System.arraycopy(bytes, 0, array, size, bytes.length);
+          size += bytes.length;
+        }
+
+        public byte[] getResult() {
+          return Arrays.copyOfRange(array, 0, size);
+        }
+    }
+    
+    public byte[] encodeAvpSet(AvpSet avps) {
+        //ByteArrayOutputStream out = new ByteArrayOutputStream();
+        DynamicByteArray dba = new DynamicByteArray(0);
+        try {
+          //DataOutputStream data = new DataOutputStream(out);
+          for (Avp a : avps) {
+            /*if (a instanceof AvpImpl) {
+              AvpImpl aImpl = (AvpImpl) a;
+              if (aImpl.rawData.length == 0 && aImpl.groupedData != null) {
+                aImpl.rawData = encodeAvpSet(a.getGrouped());
+              }
+              //data.write(newEncodeAvp(aImpl));
+              dba.add(encodeAvp(aImpl));
+            }*/
+            
+            // workaround because of AvpImpl is not public
+            boolean hasVendorId = a.getVendorId() != 0;
+            int flags = (byte) ((hasVendorId ? 0x80 : 0)
+                    | (a.isMandatory() ? 0x40 : 0) | (a.isEncrypted() ? 0x20 : 0));
+            AvpImpl aImpl = new AvpImpl(a.getCode(), flags, a.getVendorId(), a.getRawData());
+            if (aImpl.rawData.length == 0 && aImpl.groupedData != null) {
+              aImpl.rawData = encodeAvpSet(a.getGrouped());
+            }
+            dba.add(encodeAvp(aImpl));
+          }
+        }
+        catch (Exception e) {
+          e.printStackTrace();
+          logger.debug("Error during encode avps", e);
+        }
+        return dba.getResult();
     }
     
     public byte[] int32ToBytes(int value) {
@@ -1874,5 +2112,41 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
         }
         AvpImpl avp = new AvpImpl(code, (short) flags, (int) vendor, rawData);
         return avp;
+    }
+    
+    private AvpSetImpl decodeAvpSet(byte[] buffer, int shift) throws IOException, AvpDataException {
+        AvpSetImpl avps = new AvpSetImpl();
+        int tmp, counter = shift;
+        DataInputStream in = new DataInputStream(new ByteArrayInputStream(buffer, shift, buffer.length /* - shift ? */));
+
+        while (counter < buffer.length) {
+          int code = in.readInt();
+          tmp = in.readInt();
+          int flags = (tmp >> 24) & 0xFF;
+          int length  = tmp & 0xFFFFFF;
+          if (length < 0 || counter + length > buffer.length) {
+            throw new AvpDataException("Not enough data in buffer!");
+          }
+          long vendor = 0;
+          boolean hasVendor = false;
+          if ((flags & 0x80) != 0) {
+            vendor = in.readInt();
+            hasVendor = true;
+          }
+          // Determine body L = length - 4(code) -1(flags) -3(length) [-4(vendor)]
+          byte[] rawData = new byte[length - (8 + (hasVendor ? 4 : 0))];
+          in.read(rawData);
+          // skip remaining.
+          // TODO: Do we need to padd everything? Or on send stack should properly fill byte[] ... ?
+          if (length % 4 != 0) {
+            for (int i; length % 4 != 0; length += i) {
+              i = (int) in.skip((4 - length % 4));
+            }
+          }
+          AvpImpl avp = new AvpImpl(code, (short) flags, (int) vendor, rawData);
+          avps.addAvp(avp);
+          counter += length;
+        }
+        return avps;
     }
 }
