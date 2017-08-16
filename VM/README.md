@@ -1,11 +1,4 @@
-Ubuntu pre-built VM can be downloaded from the following link.
-<https://goo.gl/xMXrhh>
-
-```
-# Change the VM password after
-username: p1sec
-password: p1secP!SECp1sec
-```
+Ubuntu pre-built VM can be obtained from contact@p1sec.com
 
 VM is packaged including the following:
 * SS7FW
