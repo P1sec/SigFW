@@ -1,11 +1,9 @@
 /**
  * SigFW
  * Open Source SS7/Diameter firewall
- * By Martin Kacer, Philippe Langlois
- * Copyright 2017, P1 Security S.A.S and individual contributors
- * 
- * See the AUTHORS in the distribution for a
- * full listing of individual contributors.
+ *
+ * Copyright 2017, H21 lab, P1 Security and by all individual authors and contributors
+ * See the AUTHORS in the for a full listing of authors and contributors.
  *
  * This is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -1694,9 +1692,9 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
                 logger.debug("Diameter Encryption of Request for Destination Realm = " + dest_realm);
 
                 // encrypt
-                diameterEncrypt(msg, publicKey);
-                // TODO change to v2 to use encrypted grouped AVP
-                // diameterEncrypt_v2(msg, publicKey);
+                // diameterEncrypt(msg, publicKey);
+                // changed to v2 to use encrypted grouped AVP
+                diameterEncrypt_v2(msg, publicKey);
             }
             // Answers without Dest-Realm, but seen previous Request
             else if (!msg.isRequest()
@@ -1709,9 +1707,9 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
                 logger.debug("Diameter Encryption of Answer for Destination Realm = " + _dest_realm);
 
                 // encrypt
-                diameterEncrypt(msg, publicKey);
-                // TODO change to v2 to use encrypted grouped AVP
-                // diameterEncrypt_v2(msg, publicKey);
+                // diameterEncrypt(msg, publicKey);
+                // changed to v2 to use encrypted grouped AVP
+                diameterEncrypt_v2(msg, publicKey);
 
                 diameter_sessions.remove(session_id);
 

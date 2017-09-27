@@ -9,7 +9,7 @@ Install Maven
 (Optional) Netbeans IDE for developers
 
 ### Clone source code
-git clone https://github.com/P1sec/SigFW
+git clone https://github.com/H21lab/SigFW
 
 ### Build SS7FW project
 ```bash
@@ -32,7 +32,7 @@ tshark -T ek -x -j "" -r ./input/sigtran.pcap > sigtran.json
 cat ./input/sigtran.json > pipe
 ```
 
-![](https://github.com/P1sec/SigFW/blob/master/docs/running_from_netbeans.gif)
+![](https://github.com/H21lab/SigFW/blob/master/docs/running_from_netbeans.gif)
 
 ### Build DiameterFW project
 ```bash
@@ -73,14 +73,10 @@ Instead of DiameterFirewall run DiameterFirewallFirstInstance and DiameterFirewa
 Program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY.
 
 ## License
-SigFW is licensed under dual license policy. The default license is the Free Open Source GNU Affero GPL v3.0. Alternatively a commercial license can be obtained from P1 Security S.A.S.
+SigFW is licensed under dual license policy. The default license is the Free Open Source GNU Affero GPL v3.0. Alternatively a commercial license for this fork can be obtained from H21 lab.
 
 ## Attribution
 For the list of contributors, see the AUTHORS file.
+Copyright 2017, H21 lab, P1 Security and by all individual authors and contributors
 
-Original work was created by Martin Kacer, Philippe Langlois
-
-Copyright 2017, P1 Security S.A.S and individual contributors
-
-We would like to thanks for everyone supporting this project.
 

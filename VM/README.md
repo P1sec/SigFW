@@ -1,4 +1,4 @@
-Ubuntu pre-built VM can be obtained from contact@p1sec.com
+Ubuntu pre-built VM can be obtained from h21.lab.contact@gmail.com
 
 VM is packaged including the following:
 * SS7FW
@@ -8,13 +8,11 @@ The SSH banner in the VM includes the quick instruction how to use the VM:
 ```
 SigFW
 Open Source SS7/Diameter firewall
-Original work was created by Martin Kacer, Philippe Langlois
-Copyright 2017, P1 Security S.A.S and individual contributors
-See the AUTHORS in the distribution for a full listing of individual contributors.
+Copyright 2017, H21 lab, P1 Security and by all individual authors and contributors
+See the AUTHORS in the for a full listing of authors and contributors.
 
 SigFW is licensed under dual license policy. The default license is
-the Free Open Source GNU Affero GPL v3.0. Alternatively a commercial license
-can be obtained from P1 Security S.A.S.
+the Free Open Source GNU Affero GPL v3.0.
 
 
 Interfaces:
