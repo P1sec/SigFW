@@ -288,8 +288,8 @@ import static ss7fw.SS7FirewallConfig.firewallPolicy;
 import static ss7fw.SS7FirewallConfig.keyFactory;
 import ss7fw.connectorIDS.ConnectorIDS;
 import ss7fw.connectorIDS.ConnectorIDSModuleRest;
-import ss7fw.connectorMThreat.ConnectorMThreat;
-import ss7fw.connectorMThreat.ConnectorMThreatModuleRest;
+import sigfw.connectorMThreat.ConnectorMThreat;
+import sigfw.connectorMThreat.ConnectorMThreatModuleRest;
 //import org.mobicents.protocols.ss7.mtp.Mtp3EndCongestionPrimitive;
 //import org.mobicents.protocols.ss7.sccp.NetworkIdState;
 

@@ -19,7 +19,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  */
-package ss7fw.connectorMThreat;
+package sigfw.connectorMThreat;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -107,7 +107,6 @@ public class ConnectorMThreatModuleRest implements ConnectorMThreatModuleInterfa
         HttpAuthenticationFeature feature = HttpAuthenticationFeature.basic(username, password);
         client.register(feature);
         
-        //WebTarget target = client.target(url).path("ss7fw_api/1.0/eval_sccp_message_in_ids");
         WebTarget target = client.target(url);
         serverTargetsList.add(target);
         
