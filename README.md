@@ -11,13 +11,13 @@ Install Maven
 ### Clone source code
 git clone https://github.com/H21lab/SigFW
 
-### Build SS7FW project
+### Build SigFW project
 ```bash
-cd ./SigFW/ss7fw/ss7fw.ss7fw-core_jar_1.0.0-SNAPSHOT
+cd ./SigFW/sigfw/sigfw.sigfw
 mvn clean install -Dmaven.test.skip=true
 ```
 
-### Run SS7FW project
+### Run SS7FW
 ```bash
 mvn exec:java -Dexec.mainClass="ss7fw.SS7Firewall"
 mvn exec:java -Dexec.mainClass="ss7fw.SS7ClientLiveInput"
@@ -34,13 +34,8 @@ cat ./input/sigtran.json > pipe
 
 ![](https://github.com/H21lab/SigFW/blob/master/docs/running_from_netbeans.gif)
 
-### Build DiameterFW project
-```bash
-cd ./SigFW/diameterfw/diameterfw.diameterfw-core_jar_1.0.0-SNAPSHOT
-mvn clean install -Dmaven.test.skip=true
-```
 
-### Run DiameterFW project
+### Run DiameterFW
 ```bash
 mvn exec:java -Dexec.mainClass="diameterfw.DiameterFirewall"
 mvn exec:java -Dexec.mainClass="diameterfw.DiameterClientLiveInput"

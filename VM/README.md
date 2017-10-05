@@ -45,11 +45,10 @@ Description:
    the captured traffic from enp0s9 towards ss7firewall and ss7server on
    localhost.
 
-   SS7FW is located in /opt/SigFW/ss7fw/
-   DiameterFW is located in /opt/SigFW/diameterfw/
+   SS7FW and DiameterFW are located in /opt/SigFW/sigfw/
 
    Before first run or if the IP has changed, modify /etc/kibana/kibana.yml
 
 To access logs:
-   tail -f /opt/SigFW/ss7fw/ss7fw.ss7fw-core_jar_1.0.0-SNAPSHOT/ss7fw.log
+   tail -f /opt/SigFW/sigfw/sigfw.sigfw/sigfw.log
 ```

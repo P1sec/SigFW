@@ -4,7 +4,7 @@ Description=SS7FW client service
 [Service]
 User=p1sec
 Group=p1sec
-WorkingDirectory=/opt/SigFW/ss7fw/ss7fw.ss7fw-core_jar_1.0.0-SNAPSHOT
+WorkingDirectory=/opt/SigFW/sigfw/sigfw.sigfw
 ExecStart=/usr/bin/mvn exec:java -Dexec.mainClass="ss7fw.SS7ClientLiveInput"
 #Restart=always
 StandardOutput=null
