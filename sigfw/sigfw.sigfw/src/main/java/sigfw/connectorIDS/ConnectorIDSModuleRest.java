@@ -19,7 +19,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  */
-package ss7fw.connectorIDS;
+package sigfw.connectorIDS;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -174,6 +174,49 @@ public class ConnectorIDSModuleRest implements ConnectorIDSModuleInterface {
                     if (response.getStatus() == 200) {
                         output = response.readEntity(String.class);
                         logger.debug("evalSCCPMessage " + webResourceWithQueryParam + " Response: " + output);
+                        break;
+                    } else {
+                        logger.warn("Connection failed for IDS API: HTTP error code : " + response.getStatus() + " for " + serverTargetsList.get(i));
+                    }
+                } catch (Exception e) {
+                    serverBackoffAttempts.put(i, SERVER_BACKOFFATTEMPTS);
+                    logger.warn("Connection failed for IDS API: " + serverTargetsList.get(i) + " " + e.toString());
+                }
+            } else {
+                if (serverBackoffAttempts.get(i) != null) {
+                    serverBackoffAttempts.put(i, serverBackoffAttempts.get(i).intValue() - 1);
+                }
+                i = randomGenerator.nextInt(serverList.size());
+            }
+            attempts--;
+        } while (attempts > 0);
+
+        
+        return output.equals("1");
+    }
+    
+    /**
+     * Evaluate Diameter message towards IDS server.
+     * 
+     * @param diameter_raw Diameter hex raw payload of message
+     * @return true if message is valid and false if message should be filtered
+     */
+    public boolean evalDiameterMessage(String diameter_raw) {
+        int attempts = serverList.size();
+        
+        Response response = null;
+        String output = "1";
+        
+        int i = randomGenerator.nextInt(serverList.size());
+        
+        do {
+            if (serverBackoffAttempts.get(i) == null || serverBackoffAttempts.get(i).intValue() <= 0) {
+                try {
+                    WebTarget webResourceWithQueryParam = serverTargetsList.get(i).matrixParam("diameter_raw", diameter_raw);
+                    response = webResourceWithQueryParam.request("text/plain").get();
+                    if (response.getStatus() == 200) {
+                        output = response.readEntity(String.class);
+                        logger.debug("evalDiameterMessage " + webResourceWithQueryParam + " Response: " + output);
                         break;
                     } else {
                         logger.warn("Connection failed for IDS API: HTTP error code : " + response.getStatus() + " for " + serverTargetsList.get(i));

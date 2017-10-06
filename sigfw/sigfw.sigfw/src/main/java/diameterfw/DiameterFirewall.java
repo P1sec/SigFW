@@ -22,8 +22,8 @@
 package diameterfw;
 
 import static diameterfw.DiameterFirewallConfig.keyFactory;
-import diameterfw.connectorIDS.ConnectorIDS;
-import diameterfw.connectorIDS.ConnectorIDSModuleRest;
+import sigfw.connectorIDS.ConnectorIDS;
+import sigfw.connectorIDS.ConnectorIDSModuleRest;
 import sigfw.connectorMThreat.ConnectorMThreat;
 import sigfw.connectorMThreat.ConnectorMThreatModuleRest;
 import java.io.ByteArrayInputStream;

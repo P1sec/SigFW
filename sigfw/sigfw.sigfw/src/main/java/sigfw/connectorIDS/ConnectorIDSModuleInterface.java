@@ -19,7 +19,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  */
-package ss7fw.connectorIDS;
+package sigfw.connectorIDS;
 
 /**
  * Connector to IDS interface.
@@ -34,4 +34,5 @@ public interface ConnectorIDSModuleInterface {
 
     boolean evalSCCPMessage(String sccp_raw);
     
+    boolean evalDiameterMessage(String diameter_raw);
 }

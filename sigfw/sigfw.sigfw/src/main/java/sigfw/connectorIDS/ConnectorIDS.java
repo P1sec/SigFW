@@ -19,7 +19,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  */
-package ss7fw.connectorIDS;
+package sigfw.connectorIDS;
 
 /**
  * Connector to IDS. The connector class should be protocol independent.
@@ -83,6 +83,19 @@ public class ConnectorIDS implements ConnectorIDSModuleInterface{
             return false;
         }
         return module.evalSCCPMessage(sccp_raw);
+    }
+    
+    /**
+     * Evaluate Diameter message towards IDS server.
+     * 
+     * @param diameter_raw Diameter hex raw payload of message
+     * @return true if message is valid and false if message should be filtered
+     */
+    public boolean evalDiameterMessage(String diameter_raw) {
+        if (module == null) {
+            return false;
+        }
+        return module.evalDiameterMessage(diameter_raw);
     }
     
 }
