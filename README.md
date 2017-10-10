@@ -74,4 +74,3 @@ SigFW is licensed under dual license policy. The default license is the Free Ope
 For the list of contributors, see the AUTHORS file.
 Copyright 2017, H21 lab, P1 Security and by all individual authors and contributors
 
-
