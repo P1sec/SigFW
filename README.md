@@ -1,5 +1,5 @@
 # SigFW
-Open Source SS7/Diameter firewall
+Open Source SS7/Diameter firewall. This version is maintained by H21 lab.
 
 ## Build instructions
 
