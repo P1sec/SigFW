@@ -305,6 +305,11 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
     private static final int NETWORK_INDICATOR = 2;  // used for SCCP router, just used for passive decoding
     private static final int SSN = 0;  // used for MAP stack, just used for passive decoding
 
+    // Unit Tests flags
+    public static boolean unitTesting = false;
+    public static boolean unitTestingFlags_sendSccpErrorMessage = false;
+    public static boolean unitTestingFlags_sendSccpMessage = false;
+    
     // SCTP
     private static ManagementImpl sctpManagement;
 
@@ -313,7 +318,7 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
     private static M3UAManagementImpl clientM3UAMgmt;
 
     // SCCP
-    private static SccpStackImpl sccpStack;
+    public static SccpStackImpl sccpStack;
     private static SccpProvider sccpProvider;
     private static MessageFactoryImpl sccpMessageFactory;
   
@@ -344,7 +349,7 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
     // Honeypot GT NAT
     // Session Key: Original_calling_GT:Original_called_GT (from Invoke)
     // Value: Original_called_GT:Original_dest_SSN
-    private static Map<String, String> dnat_sessions = null;
+    private Map<String, String> dnat_sessions = null;
     
     // Encryption Autodiscovery
     // Just store first N (encryption_autodiscovery_digits) digits of GT to do not spam the foreign PLMN
@@ -362,6 +367,14 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
     
     static final private Long OC_SIGNATURE = 100L;
     static final private Long OC_AUTO_ENCRYPTION = 99L;
+    
+    /**
+     * Reset Unit Testing Flags
+     */
+    public void resetUnitTestingFlags() {
+        unitTestingFlags_sendSccpErrorMessage = false;
+        unitTestingFlags_sendSccpMessage = false;
+    }
     
     /**
      * Initialize SCTP layer
@@ -680,7 +693,13 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
      * 
      * @param ipChannelType TCP or UDP
      */
-    protected void initializeStack(IpChannelType ipChannelType) throws Exception {
+    public void initializeStack(IpChannelType ipChannelType) throws Exception {
+        
+        if (SS7FirewallConfig.firewallPolicy == SS7FirewallConfig.FirewallPolicy.DNAT_TO_HONEYPOT) {
+            dnat_sessions = ExpiringMap.builder()
+                                                .expiration(SS7FirewallConfig.honeypot_dnat_session_expiration_timeout, TimeUnit.SECONDS)
+                                                .build();
+        }   
 
         this.initSCTP(ipChannelType);
 
@@ -713,6 +732,12 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
      * @param returnCauseInt SCCP return cause
      */
     private void sendSccpErrorMessage(Mtp3UserPart mup, int opc, int dpc, int sls, int ni, LongMessageRuleType lmrt, SccpDataMessage message, ReturnCauseValue returnCauseInt) {
+        
+        if (this.unitTesting == true) {
+            this.unitTestingFlags_sendSccpErrorMessage = true;
+            return;
+        }
+        
         SccpNoticeMessage ans = null;
         // not sure if its proper
         ReturnCause returnCause = ((ParameterFactory) this.sccpProvider.getParameterFactory()).createReturnCause(returnCauseInt);
@@ -765,6 +790,12 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
      * @param message Original SCCP message
      */
     private void sendSccpMessage(Mtp3UserPart mup, int opc, int dpc, int sls, int ni, LongMessageRuleType lmrt, SccpDataMessage message) {
+        
+        if (this.unitTesting == true) {
+            this.unitTestingFlags_sendSccpMessage = true;
+            return;
+        }
+        
         EncodingResultData erd;
         try {
             if (SS7FirewallConfig.firewallPolicy == SS7FirewallConfig.FirewallPolicy.DNAT_TO_HONEYPOT &&  dnat_sessions != null) {
@@ -2126,15 +2157,6 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
             }
         }
         
-        if (SS7FirewallConfig.firewallPolicy == SS7FirewallConfig.FirewallPolicy.DNAT_TO_HONEYPOT) {
-            
-            
-            dnat_sessions = ExpiringMap.builder()
-                                                .expiration(SS7FirewallConfig.honeypot_dnat_session_expiration_timeout, TimeUnit.SECONDS)
-                                                .build();
-        }    
-        
-
         logger.setLevel(org.apache.log4j.Level.DEBUG);
         
         // ---- REST API -----

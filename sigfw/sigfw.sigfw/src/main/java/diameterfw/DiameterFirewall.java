@@ -117,6 +117,8 @@ import org.mobicents.protocols.api.Server;
 import org.mobicents.protocols.api.ServerListener;
 import org.mobicents.protocols.sctp.AssociationImpl;
 import org.mobicents.protocols.sctp.ManagementImpl;
+import static ss7fw.SS7Firewall.unitTestingFlags_sendSccpErrorMessage;
+import static ss7fw.SS7Firewall.unitTestingFlags_sendSccpMessage;
 
 /**
  * @author Martin Kacer
@@ -154,12 +156,16 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
     private int toReceiveIndex = 0;
     private boolean finished = false;
 
+    // Unit Tests flags
+    public static boolean unitTesting = false;
+    public static boolean unitTestingFlags_sendDiameterMessage = false;
+    public static int unitTestingFlags_sendDiameterMessage_resultCode = ResultCode.SUCCESS;
 
     // SCTP
-    private static ManagementImpl sctpManagement;
+    public static ManagementImpl sctpManagement;
 
     // Diameter
-    protected final MessageParser parser = new MessageParser();
+    public final MessageParser parser = new MessageParser();
     
     static private String configName = "diameterfw.json";
 
@@ -219,6 +225,14 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
     static final private int AVP_AUTO_ENCRYPTION_REALM = 1102;
     static final private int AVP_AUTO_ENCRYPTION_PUBLIC_KEY = 1103;
 
+    /**
+     * Reset Unit Testing Flags
+     */
+    public void resetUnitTestingFlags() {
+        unitTestingFlags_sendDiameterMessage = false;
+        unitTestingFlags_sendDiameterMessage_resultCode = ResultCode.SUCCESS;
+    }
+    
     private void initSCTP(IpChannelType ipChannelType) throws Exception {
         logger.debug("Initializing SCTP Stack ....");
         this.sctpManagement = new ManagementImpl(
@@ -291,7 +305,7 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
         logger.debug("Initialized SCTP Stack ....");
     }
 
-    private void initStack(IpChannelType ipChannelType) throws Exception {
+    public void initStack(IpChannelType ipChannelType) throws Exception {
         if (logger.isInfoEnabled()) {
                 logger.info("Initializing Stack...");
         }
@@ -1181,7 +1195,16 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
      * @param lua_hm the LUA parameters, decoded from the message
      */
     private void sendDiameterMessage(Association origin_asctn, int payloadProtocolId, int streamNumber, Message message, boolean forward_indicator, HashMap<String, String> lua_hm) {
+        if (this.unitTesting == true) {
+            this.unitTestingFlags_sendDiameterMessage = true;
+            if (!message.isRequest()) {
+                this.unitTestingFlags_sendDiameterMessage_resultCode = ((Answer)message).getResultCode().getCode();
+            }
+            return;
+        }
+        
         try {
+            
             if (DiameterFirewallConfig.firewallPolicy == DiameterFirewallConfig.FirewallPolicy.DNAT_TO_HONEYPOT &&  dnat_sessions != null) {
                 // Reverse NAT from Honeypot (the backward messages)
                 if(message.getAvps() != null
