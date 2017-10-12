@@ -45,7 +45,7 @@ public class Test_SS7Firewall {
     private static void initializeSS7Firewall() {
         try {
             // Use last config
-            SS7FirewallConfig.loadConfigFromFile("ss7fw.json");
+            SS7FirewallConfig.loadConfigFromFile("ss7fw_junit.json");
             // TODO use the following directive instead to do not use .last configs
             //SS7FirewallConfig.loadConfigFromFile(configName);
         } catch (Exception ex) {

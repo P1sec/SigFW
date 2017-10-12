@@ -66,7 +66,7 @@ public class Test_DiameterFirewall {
         
         try {
             // Use last config
-            DiameterFirewallConfig.loadConfigFromFile("diameterfw.json");
+            DiameterFirewallConfig.loadConfigFromFile("diameterfw_junit.json");
             // TODO use the following directive instead to do not use .last configs
             //SS7FirewallConfig.loadConfigFromFile(configName);
         } catch (Exception ex) {
