@@ -44,8 +44,26 @@ import org.mobicents.protocols.api.PayloadData;
 public class Test_DiameterFirewall {
     
     private static DiameterFirewall sigfw = null;
+    
+    private static org.apache.log4j.Logger logger = org.apache.log4j.Logger.getLogger(Test_DiameterFirewall.class);
+
+    private static void configLog4j() {
+        
+        InputStream inStreamLog4j = DiameterFirewall.class.getClassLoader().getResourceAsStream("log4j.properties");
+        Properties propertiesLog4j = new Properties();
+        try {
+            propertiesLog4j.load(inStreamLog4j);
+            PropertyConfigurator.configure(propertiesLog4j);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        logger.debug("log4j configured");
+    }
 
     private static void initializeDiameterFirewall() {
+        configLog4j();
+        
         try {
             // Use last config
             DiameterFirewallConfig.loadConfigFromFile("diameterfw.json");
@@ -71,7 +89,7 @@ public class Test_DiameterFirewall {
         initializeDiameterFirewall();
     }
     
-    /*@Test
+    @Test
     public void testULR() {
 
         logger.info("[[[[[[[[[[   ULR      ]]]]]]]]]]");
@@ -95,10 +113,10 @@ public class Test_DiameterFirewall {
             Logger.getLogger(Test_DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
         }
         
-        Assert.assertTrue("ULR message (CommandCode 316, Request) should be allowed", sigfw.unitTestingFlags_sendDiameterMessage);
+        Assert.assertTrue("This ULR message (CommandCode 316, Request) should be allowed by LUA rules diameter_orig_realm", !sigfw.unitTestingFlags_sendDiameterMessage);
 
         
-    }*/
+    }
     
 
 }
