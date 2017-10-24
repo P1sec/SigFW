@@ -1,5 +1,5 @@
 # SigFW
-Open Source SS7/Diameter firewall. This version is maintained by H21 lab.
+Open Source SS7/Diameter firewall
 
 ## Build instructions
 
@@ -9,7 +9,7 @@ Install Maven
 (Optional) Netbeans IDE for developers
 
 ### Clone source code
-git clone https://github.com/H21lab/SigFW
+git clone https://github.com/P1Sec/SigFW
 
 ### Build SigFW project
 ```bash
@@ -68,9 +68,14 @@ Instead of DiameterFirewall run DiameterFirewallFirstInstance and DiameterFirewa
 Program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY.
 
 ## License
-SigFW is licensed under dual license policy. The default license is the Free Open Source GNU Affero GPL v3.0. Alternatively a commercial license for this fork can be obtained from H21 lab.
+SigFW is licensed under dual license policy. The default license is the Free Open Source GNU Affero GPL v3.0. Alternatively a commercial license for this fork can be obtained from P1 Security S.A.S.
 
 ## Attribution
 For the list of contributors, see the AUTHORS file.
-Copyright 2017, H21 lab, P1 Security and by all individual authors and contributors
+
+Original work was created by Martin Kacer, Philippe Langlois
+
+Copyright 2017, P1 Security S.A.S and individual contributors
+
+We would like to thanks for everyone supporting this project.
 

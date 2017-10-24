@@ -30,7 +30,8 @@ fi
 
 printf "SigFW\n"
 printf "Open Source SS7/Diameter firewall\n"
-printf "Copyright 2017, H21 lab, P1 Security and by all individual authors and contributors\n"
+printf "Original work was created by Martin Kacer, Philippe Langlois\n"
+printf "Copyright 2017, P1 Security S.A.S and individual contributors\n"
 printf "See the AUTHORS in the distribution for a full listing of individual contributors.\n"
 printf "\n"
 printf "SigFW is licensed under dual license policy. The default license is\n"
