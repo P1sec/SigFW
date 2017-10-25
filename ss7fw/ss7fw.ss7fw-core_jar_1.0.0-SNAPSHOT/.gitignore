@@ -1,8 +1,0 @@
-target/
-XmlSctpClientLiveInput/
-XmlSctpFirewall/
-XmlSctpServer/
-*.last
-input/*
-ss7fw.log
-Sctp*.xml

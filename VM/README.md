@@ -10,11 +10,10 @@ SigFW
 Open Source SS7/Diameter firewall
 Original work was created by Martin Kacer, Philippe Langlois
 Copyright 2017, P1 Security S.A.S and individual contributors
-See the AUTHORS in the distribution for a full listing of individual contributors.
+See the AUTHORS in the distribution for a full listing of authors and contributors.
 
 SigFW is licensed under dual license policy. The default license is
-the Free Open Source GNU Affero GPL v3.0. Alternatively a commercial license
-can be obtained from P1 Security S.A.S.
+the Free Open Source GNU Affero GPL v3.0.
 
 
 Interfaces:
@@ -47,11 +46,10 @@ Description:
    the captured traffic from enp0s9 towards ss7firewall and ss7server on
    localhost.
 
-   SS7FW is located in /opt/SigFW/ss7fw/
-   DiameterFW is located in /opt/SigFW/diameterfw/
+   SS7FW and DiameterFW are located in /opt/SigFW/sigfw/
 
    Before first run or if the IP has changed, modify /etc/kibana/kibana.yml
 
 To access logs:
-   tail -f /opt/SigFW/ss7fw/ss7fw.ss7fw-core_jar_1.0.0-SNAPSHOT/ss7fw.log
+   tail -f /opt/SigFW/sigfw/sigfw.sigfw/sigfw.log
 ```

@@ -1,0 +1,234 @@
+{
+	"operator_configuration": {
+		"Home_GT_prefixes_comment": "# Identification of HPLMN network, used to identify incoming and outgoing traffic of HPLMN",
+		"Home_GT_prefixes": [
+			"0"
+		],
+		"Home_IMSI_prefixes_comment": "# Identification Home IMSI range for HPLMN network, used to identify home subscribers",
+		"Home_IMSI_prefixes": [
+			"111111"
+		]
+	},
+	"sigfw_configuration": {
+		"ss7fw_configuration_comment": "# Signalling Firewall configuration. Because of dynamic updates, the sigfw.json.last is periodically created on filesystem.",
+	
+		"sctp_comment": "# SCTP configuration part of Signalling Firewall",
+		"sctp": {
+			"sctp_management_name": "sctp_mgmt",
+			"sctp_server": [
+				{
+					"server_name": "sctp_server",
+					"host_address": "127.0.0.1",
+					"port": "3433"
+				}
+			],
+			"sctp_server_association": [
+				{
+					"peer_address": "127.0.0.1",
+					"peer_port": "2345",
+					"server_name": "sctp_server",
+					"assoc_name": "sctp_from_client_to_firewall"
+				}
+			],
+			"sctp_association": [
+				{
+					"host_address": "127.0.0.1",
+					"host_port": "2344",
+					"peer_address": "127.0.0.1",
+					"peer_port": "3434",
+					"assoc_name": "sctp_from_firewall_to_server"
+				}
+			]
+		},
+		
+		"m3ua": {
+			"m3ua_comment": "# M3UA configuration part of Signalling Firewall",
+			
+			"m3ua_server": {
+				"m3ua_management_name": "m3ua_server_mgmt",
+				"as_name": "RAS1",
+				"asp_name": "RASP1",
+				"sctp_assoc_name": "sctp_from_client_to_firewall",
+				"remote_pc": ["1"]
+			},
+			"m3ua_client": {
+				"m3ua_management_name": "m3ua_client_mgmt",
+				"as_name": "AS1",
+				"asp_name": "ASP1",
+				"sctp_assoc_name": "sctp_from_firewall_to_server",
+				"remote_pc": ["2"]
+			}
+		},
+		
+		"firewall_rules": {
+			"firewall_rules_comment": "# Firewall filtering rules configuration",
+		
+			"firewall_policy_comment": "# Allowed value is one from: DROP_SILENTLY, DROP_WITH_SCCP_ERROR, DNAT_TO_HONEYPOT, ALLOW",
+			"firewall_policy": "DROP_WITH_SCCP_ERROR",
+			
+			"sccp": {
+				"sccp_comment": "# SCCP firewall rules",
+				"calling_gt_whitelist": [
+					"4*"
+				],
+				"calling_gt_blacklist": [
+					"10000000000",
+					"222*"
+				]
+			},
+			
+			"tcap": {
+				"tcap_comment": "# TCAP Cat1 firewall rules",
+				"oc_blacklist": [
+					"5",
+					"6",
+					"9",
+					"16",
+					"20",
+					"21",
+					"22",
+					"24",
+					"25",
+					"26",
+					"27",
+					"28",
+					"29",
+					"30",
+					"31",
+					"32",
+					"33",
+					"34",
+					"35",
+					"39",
+					"40",
+					"41",
+					"42",
+					"43",
+					"50",
+					"51",
+					"52",
+					"55",
+					"58",
+					"62",
+					"65",
+					"68",
+					"69",
+					"71",
+					"72",
+					"76",
+					"77",
+					"78",
+					"79",
+					"80",
+					"81",
+					"82",
+					"83",
+					"84",
+					"85",
+					"86",
+					"109",
+					"110",
+					"111",
+					"112",
+					"113",
+					"114",
+					"115",
+					"116",
+					"117",
+					"118",
+					"119",
+					"120",
+					"121",
+					"122",
+					"123",
+					"124",
+					"125",
+					"126"		
+				]
+			},
+			
+			"map": {
+				"map_comment": "# MAP Cat2 firewall rules",
+				"cat2_oc_blacklist": [
+					"3",
+					"4",
+					"7",
+					"8",
+					"70"
+				]
+			},
+			
+			"lua": {
+				"lua_comment": "# LUA Blacklist firewall rules. Currently supported LUA variables are: sccp_calling_gt, sccp_called_gt, tcap_oc, tcap_ac, tcap_tag, map_imsi, map_msisdn",
+				"blacklist_rules": [
+					"sccp_called_gt == '22222222222'",
+					"sccp_calling_gt == '11111111111' and tcap_oc == '59'"
+				]
+			},
+			
+			"ids": {
+				"ids_comment": "# IDS API. After evaluating internal firewall rules, the external IDS system can be used to check message (e.g. Cat3). If not required remove this ids json block from config.",
+				
+				"ids_api_type_comment": "# Type of connector. Currently supported only REST",
+				"ids_api_type": "REST",
+				"ids_servers": [
+					{
+						"host": "https://localhost:8443/ss7fw_api/1.0/eval_sccp_message_in_ids",
+						"username": "user",
+						"password": "password"
+					}
+				]
+			},
+			
+			"mthreat": {
+				"mthreat_comment": "# mThreat API. If the message matches internal firewall or IDS rules, then the firewall can report the event in anonymized way to mThreat. If not required remove this mthreat json block from config.",
+			
+				"mthreat_api_type_comment": "# Type of connector. Currently supported only REST",
+				"mthreat_api_type": "REST",
+				"mthreat_salt_comment": "# Change the salt value for unique anonymization",
+				"mthreat_salt": "XVm4AoKrkicsgEcx",
+				"mthreat_servers": [
+					{
+						"host": "https://127.0.0.1:8444/mthreat_api/1.0/send_ss7_alert_to_mthreat",
+						"username": "user",
+						"password": "pass"
+					}
+				]
+			},
+			
+			"honeypot": {
+				"honeypot_comment": "# Honeypot configuration. Only used if firewall policy is DNAT_TO_HONEYPOT",
+			
+				"sccp_gt_comment": "# The firewall after detecting the message will perform DNAT to the following GT.",
+				"sccp_gt": "33333333333",
+				
+				"dnat_session_expiration_timeout_comment": "# After matching the firewall or IDS rules, the firewall will apply DNAT for calling GT for the defined number of seconds",
+				"dnat_session_expiration_timeout": "30"
+			}
+		},
+		
+		"encryption_rules": {
+			"encryption_rules_comment": "# TCAP encryption. NTP synchronization of FW instance is required to work this properly. If autodiscovery is enabled the public keys are added dynamically. Public and private keys are Base64 encoded.",
+			
+			"called_gt_encryption_comment": "# Should include json block with {called_gt, public_key}. For example of config see sigfw_1.json or sigfw_2.json.",
+			"called_gt_encryption": [
+			],
+			"called_gt_decryption_comment": "# Should include json block with {called_gt, public_key, private}. For example of config see sigfw_1.json or sigfw_2.json.",
+			"called_gt_decryption": [
+			],
+			"autodiscovery_comment": "# When enabled the Firewall will try to retrieve public key for unknown destinations by sending MAP Invoke with OpCode 99.",
+			"autodiscovery": "true"
+		},
+		
+		"signature_rules": {
+			"signature_rules_comment": "# TCAP signing. NTP synchronization of FW instance is required to work this properly. Public and private keys are Base64 encoded.",
+			
+			"calling_gt_verify_comment": "# Should include json block with {calling_gt, public_key}. For example of config see sigfw_1.json or sigfw_2.json.",
+			"calling_gt_verify": [
+			],
+			"calling_gt_signing_comment": "# Should include json block with {calling_gt, public_key, private_key}. For example of config see sigfw_1.json or sigfw_2.json.",
+			"calling_gt_signing": [
+			]
+		}
+	}
+}
