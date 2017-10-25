@@ -10,7 +10,7 @@ SigFW
 Open Source SS7/Diameter firewall
 Original work was created by Martin Kacer, Philippe Langlois
 Copyright 2017, P1 Security S.A.S and individual contributors
-See the AUTHORS in the for a full listing of authors and contributors.
+See the AUTHORS in the distribution for a full listing of authors and contributors.
 
 SigFW is licensed under dual license policy. The default license is
 the Free Open Source GNU Affero GPL v3.0.

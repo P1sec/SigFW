@@ -32,7 +32,7 @@ tshark -T ek -x -j "" -r ./input/sigtran.pcap > sigtran.json
 cat ./input/sigtran.json > pipe
 ```
 
-![](https://github.com/H21lab/SigFW/blob/master/docs/running_from_netbeans.gif)
+![](https://github.com/P1sec/SigFW/blob/master/docs/running_from_netbeans.gif)
 
 
 ### Run DiameterFW
@@ -68,7 +68,7 @@ Instead of DiameterFirewall run DiameterFirewallFirstInstance and DiameterFirewa
 Program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY.
 
 ## License
-SigFW is licensed under dual license policy. The default license is the Free Open Source GNU Affero GPL v3.0. Alternatively a commercial license for this fork can be obtained from P1 Security S.A.S.
+SigFW is licensed under dual license policy. The default license is the Free Open Source GNU Affero GPL v3.0. Alternatively a commercial license can be obtained from P1 Security S.A.S.
 
 ## Attribution
 For the list of contributors, see the AUTHORS file.

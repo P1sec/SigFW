@@ -9,7 +9,7 @@
     -->
     <artifactId>sigfw</artifactId>
     <version>1.0.0</version>
-    <groupId>com.h21lab</groupId>
+    <groupId>com.p1sec</groupId>
     <modelVersion>4.0.0</modelVersion>
         
     <name>SigFW :: SigFW core</name>
