@@ -565,13 +565,29 @@ public class SS7ClientLiveInput extends AbstractSctpBase implements ManagementEv
                         //logger.debug(strLine);
                         i += "sccp_raw\": ".length();
                         str = str.substring(i);
-                        //logger.debug(s);
-                        String s = str.split("\"")[1];
-                        //logger.debug(s);
+                        
+                        // can be also json arrray
+                        String[] items;
+                        if (str.startsWith("[")) {
+                            int _marker_pos = str.indexOf("]");
+                            if (_marker_pos > 0) {
+                                str = str.substring(0, _marker_pos);
+                            }
+                            items = str.replaceAll("\\[", "").replaceAll("\\]", "").replaceAll("\\s", "").split(",");
+                        } else {
+                            items = new String[1];
+                            items[0] = str;
+                        }
+                        
+                        // iterate over all raw items
+                        for(String item:items) {
+                            //logger.debug("str = " + str);
+                            String s = item.split("\"")[1];
+                            //logger.debug("s = " + s);
 
-                        Mtp3TransferPrimitive mtp3TransferPrimitive = client.clientM3UAMgmt.getMtp3TransferPrimitiveFactory().createMtp3TransferPrimitive(3, 2, 0, 1, 2, 5, hexStringToByteArray(s));
-                        client.clientM3UAMgmt.sendMessage(mtp3TransferPrimitive);
-
+                            Mtp3TransferPrimitive mtp3TransferPrimitive = client.clientM3UAMgmt.getMtp3TransferPrimitiveFactory().createMtp3TransferPrimitive(3, 2, 0, 1, 2, 5, hexStringToByteArray(s));
+                            client.clientM3UAMgmt.sendMessage(mtp3TransferPrimitive);
+                        }
                         i = str.indexOf("sccp_raw");
                     }
                     
