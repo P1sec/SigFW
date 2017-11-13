@@ -421,48 +421,64 @@ public class DiameterClientLiveInput implements ManagementEventListener, ServerL
                                 //logger.debug(strLine);
                                 i += "diameter_raw\": ".length();
                                 str = str.substring(i);
-                                //logger.debug(s);
-                                String s = str.split("\"")[1];
-                                //logger.debug(s);
-
-                                ByteBuffer buf = ByteBuffer.wrap(hexStringToByteArray(s));
-                                Message msg = ec.parser.createMessage(buf);
                                 
-                                if (msg != null && msg.isRequest()) {
-                                    
-                                    ec.dumpMessage(msg, true);
-                                    
-                                    if (USE_RAW_SCTP_IMPL) {
-                                        ByteBuffer byteBuffer = ec.parser.encodeMessage((IMessage)msg);
-                                        PayloadData payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, 0, 0);
-
-                                        ec.sctpManagement.getAssociation(ec.sctp_assoc_name).send(payloadData);
-                                    } else {
-                                        ec.session = ec.factory.getNewSession("CretedByDiameterLiveClient;" + System.currentTimeMillis());
-                                        Request r = ec.session.createRequest(msg.getCommandCode(), ApplicationId.createByAuthAppId(msg.getApplicationId()), ec.realmName, ec.serverURI);
-                                        
-                                        AvpSet avpSet = msg.getAvps();
-                                        AvpSet avpSetR = r.getAvps();
-
-
-                                        //Avp avp;
-                                        for (int j = 0; j < avpSetR.size(); j++) {
-                                            avpSetR.removeAvpByIndex(j);
-                                        }
-                                        for (int j = 0; j < avpSet.size(); j++) {
-                                            avpSetR.addAvp(avpSet.getAvpByIndex(j));
-                                        }
-                                        avpSetR.removeAvp(Avp.DESTINATION_REALM);
-                                        //byte[] b = hexStringToByteArray("65786368616e67652e6578616d706c652e6f7267");
-                                        avpSetR.addAvp(Avp.DESTINATION_REALM, "exchange.example.org", true, false, true);
-
-                                        avpSetR.removeAvp(Avp.ORIGIN_REALM);
-                                        
-                                        ec.session.send(r);
+                                // can be also json arrray
+                                String[] items;
+                                if (str.startsWith("[")) {
+                                    int _marker_pos = str.indexOf("]");
+                                    if (_marker_pos > 0) {
+                                        str = str.substring(0, _marker_pos);
                                     }
-                                    
+                                    items = str.replaceAll("\\[", "").replaceAll("\\]", "").replaceAll("\\s", "").split(",");
+                                } else {
+                                    items = new String[1];
+                                    items[0] = str;
                                 }
-                                    
+                                
+                                // iterate over all raw items
+                                for(String item:items) {
+                                    //logger.debug("str = " + str);
+                                    String s = item.split("\"")[1];
+                                    //logger.debug("s = " + s);
+
+                                    ByteBuffer buf = ByteBuffer.wrap(hexStringToByteArray(s));
+                                    Message msg = ec.parser.createMessage(buf);
+
+                                    if (msg != null && msg.isRequest()) {
+
+                                        ec.dumpMessage(msg, true);
+
+                                        if (USE_RAW_SCTP_IMPL) {
+                                            ByteBuffer byteBuffer = ec.parser.encodeMessage((IMessage)msg);
+                                            PayloadData payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, 0, 0);
+
+                                            ec.sctpManagement.getAssociation(ec.sctp_assoc_name).send(payloadData);
+                                        } else {
+                                            ec.session = ec.factory.getNewSession("CretedByDiameterLiveClient;" + System.currentTimeMillis());
+                                            Request r = ec.session.createRequest(msg.getCommandCode(), ApplicationId.createByAuthAppId(msg.getApplicationId()), ec.realmName, ec.serverURI);
+
+                                            AvpSet avpSet = msg.getAvps();
+                                            AvpSet avpSetR = r.getAvps();
+
+
+                                            //Avp avp;
+                                            for (int j = 0; j < avpSetR.size(); j++) {
+                                                avpSetR.removeAvpByIndex(j);
+                                            }
+                                            for (int j = 0; j < avpSet.size(); j++) {
+                                                avpSetR.addAvp(avpSet.getAvpByIndex(j));
+                                            }
+                                            avpSetR.removeAvp(Avp.DESTINATION_REALM);
+                                            //byte[] b = hexStringToByteArray("65786368616e67652e6578616d706c652e6f7267");
+                                            avpSetR.addAvp(Avp.DESTINATION_REALM, "exchange.example.org", true, false, true);
+
+                                            avpSetR.removeAvp(Avp.ORIGIN_REALM);
+
+                                            ec.session.send(r);
+                                        }
+
+                                    }
+                                }    
                                 i = str.indexOf("diameter_raw");
                             }
 
