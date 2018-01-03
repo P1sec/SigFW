@@ -4,8 +4,9 @@ XmlSctpFirewall/
 XmlSctpServer/
 XmlDiameterFirewall/
 *.log
+*.log.*
 *.last
 Sctp*.xml
 server-management*.xml
 127.0.0.1.*.xml
-
+input/

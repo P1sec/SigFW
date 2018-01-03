@@ -262,11 +262,15 @@ import org.mobicents.protocols.ss7.indicator.RoutingIndicator;
 import org.mobicents.protocols.ss7.m3ua.impl.parameter.ParameterFactoryImpl;
 import org.mobicents.protocols.ss7.map.api.MAPApplicationContext;
 import org.mobicents.protocols.ss7.map.api.MAPParsingComponentException;
+import org.mobicents.protocols.ss7.map.api.service.mobility.subscriberInformation.AnyTimeSubscriptionInterrogationRequest;
+import org.mobicents.protocols.ss7.map.api.service.mobility.subscriberInformation.AnyTimeSubscriptionInterrogationResponse;
 import org.mobicents.protocols.ss7.map.service.callhandling.ProvideRoamingNumberRequestImpl;
 import org.mobicents.protocols.ss7.map.service.mobility.locationManagement.CancelLocationRequestImpl;
 import org.mobicents.protocols.ss7.map.service.mobility.subscriberInformation.ProvideSubscriberInfoRequestImpl;
 import org.mobicents.protocols.ss7.map.service.mobility.subscriberManagement.DeleteSubscriberDataRequestImpl;
 import org.mobicents.protocols.ss7.map.service.mobility.subscriberManagement.InsertSubscriberDataRequestImpl;
+import org.mobicents.protocols.ss7.mtp.Mtp3EndCongestionPrimitive;
+import org.mobicents.protocols.ss7.sccp.NetworkIdState;
 import org.mobicents.protocols.ss7.sccp.impl.message.MessageFactoryImpl;
 import org.mobicents.protocols.ss7.sccp.impl.message.SccpDataMessageImpl;
 import org.mobicents.protocols.ss7.sccp.impl.message.SccpNoticeMessageImpl;
@@ -2521,19 +2525,12 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
 	 * 
 	 * @see
 	 * org.mobicents.protocols.ss7.map.api.MAPDialogListener#onDialogRequestEricsson
-	 * (org.mobicents.protocols.ss7.map.api.MAPDialog,
-	 * org.mobicents.protocols.ss7.map.api.primitives.AddressString,
-	 * org.mobicents.protocols.ss7.map.api.primitives.AddressString,
-	 * org.mobicents.protocols.ss7.map.api.primitives.IMSI,
-	 * org.mobicents.protocols.ss7.map.api.primitives.AddressString)
      */
     @Override
-    public void onDialogRequestEricsson(MAPDialog mapDialog, AddressString destReference, AddressString origReference,
-            IMSI imsi, AddressString vlr) {
+    public void onDialogRequestEricsson(MAPDialog mapd, AddressString as, AddressString as1, AddressString as2, AddressString as3) {
         if (logger.isDebugEnabled()) {
-            logger.debug(String.format(
-                    "onDialogRequestEricsson for DialogId=%d DestinationReference=%s OriginReference=%s ",
-                    mapDialog.getLocalDialogId(), destReference, origReference));
+            logger.debug(String.format("onDialogRequest for DialogId=%d DestinationReference=%s OriginReference=%s ",
+                    mapd.getLocalDialogId(), as, as1, as2, as3));
         }
     }
 
@@ -3283,6 +3280,30 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
         if (asctn != null) {
             logger.warn(String.format("SCTP AssociationDown name=%s peer=%s", asctn.getName(), asctn.getPeerAddress()));
         }
+    }
+    
+    public void onMtp3EndCongestionMessage(Mtp3EndCongestionPrimitive mecp) {
+        logger.debug("[[[[[[[[[[    onMtp3EndCongestionMessage      ]]]]]]]]]]");
+    }
+
+    public void onCoordResponse(int i, int i1) {
+        logger.debug("[[[[[[[[[[    onCoordResponse      ]]]]]]]]]]");
+    }
+
+    public void onPcState(int i, SignallingPointStatus sps, Integer intgr, RemoteSccpStatus rss) {
+        logger.debug("[[[[[[[[[[    onPcState      ]]]]]]]]]]");
+    }
+
+    public void onNetworkIdState(int i, NetworkIdState nis) {
+        logger.debug("[[[[[[[[[[    onNetworkIdState      ]]]]]]]]]]");
+    }
+
+    public void onAnyTimeSubscriptionInterrogationRequest(AnyTimeSubscriptionInterrogationRequest atsir) {
+        logger.debug("[[[[[[[[[[    onAnyTimeSubscriptionInterrogationRequest      ]]]]]]]]]]");
+    }
+
+    public void onAnyTimeSubscriptionInterrogationResponse(AnyTimeSubscriptionInterrogationResponse atsir) {
+        logger.debug("[[[[[[[[[[    onAnyTimeSubscriptionInterrogationResponse      ]]]]]]]]]]");
     }
 
     /**
