@@ -88,6 +88,7 @@ import org.mobicents.protocols.ss7.map.api.service.supplementary.UnstructuredSSN
 import org.mobicents.protocols.ss7.map.api.service.supplementary.UnstructuredSSRequest;
 import org.mobicents.protocols.ss7.map.api.service.supplementary.UnstructuredSSResponse;
 import org.mobicents.protocols.ss7.map.datacoding.CBSDataCodingSchemeImpl;
+import org.mobicents.protocols.ss7.sccp.LoadSharingAlgorithm;
 import org.mobicents.protocols.ss7.sccp.OriginationType;
 import org.mobicents.protocols.ss7.sccp.RuleType;
 import org.mobicents.protocols.ss7.sccp.SccpProvider;
@@ -219,12 +220,12 @@ public class SS7Server extends AbstractSctpBase implements MAPDialogListener, MA
         gt = this.sccpProvider.getParameterFactory().createGlobalTitle("*", 0, org.mobicents.protocols.ss7.indicator.NumberingPlan.ISDN_TELEPHONY, null, NatureOfAddress.INTERNATIONAL);
         SccpAddress pattern = this.sccpProvider.getParameterFactory().createSccpAddress(RoutingIndicator.ROUTING_BASED_ON_GLOBAL_TITLE, gt, 0, 0);
         String mask = "K";
-        ((RouterImpl) this.sccpStack.getRouter()).addRule(1, RuleType.SOLITARY, null, OriginationType.LOCAL, pattern, mask, 1, -1, null, 0);
+        ((RouterImpl) this.sccpStack.getRouter()).addRule(1, RuleType.SOLITARY, LoadSharingAlgorithm.Bit0, OriginationType.LOCAL, pattern, mask, 1, -1, null, 0, null);
         
         gt = this.sccpProvider.getParameterFactory().createGlobalTitle("*", 0, org.mobicents.protocols.ss7.indicator.NumberingPlan.ISDN_TELEPHONY, null, NatureOfAddress.INTERNATIONAL);
         pattern = this.sccpProvider.getParameterFactory().createSccpAddress(RoutingIndicator.ROUTING_BASED_ON_GLOBAL_TITLE, gt, 0, 0);
         mask = "R";
-        ((RouterImpl) this.sccpStack.getRouter()).addRule(2, RuleType.SOLITARY, null, OriginationType.REMOTE, pattern, mask, 2, -1, null, 0);
+        ((RouterImpl) this.sccpStack.getRouter()).addRule(2, RuleType.SOLITARY, LoadSharingAlgorithm.Bit0, OriginationType.REMOTE, pattern, mask, 2, -1, null, 0, null);
         
         
         logger.debug("Initialized SCCP Stack ....");
@@ -450,19 +451,12 @@ public class SS7Server extends AbstractSctpBase implements MAPDialogListener, MA
 	 * 
 	 * @see
 	 * org.mobicents.protocols.ss7.map.api.MAPDialogListener#onDialogRequestEricsson
-	 * (org.mobicents.protocols.ss7.map.api.MAPDialog,
-	 * org.mobicents.protocols.ss7.map.api.primitives.AddressString,
-	 * org.mobicents.protocols.ss7.map.api.primitives.AddressString,
-	 * org.mobicents.protocols.ss7.map.api.primitives.IMSI,
-	 * org.mobicents.protocols.ss7.map.api.primitives.AddressString)
      */
     @Override
-    public void onDialogRequestEricsson(MAPDialog mapDialog, AddressString destReference, AddressString origReference,
-            IMSI imsi, AddressString vlr) {
+    public void onDialogRequestEricsson(MAPDialog mapd, AddressString as, AddressString as1, AddressString as2, AddressString as3) {
         if (logger.isDebugEnabled()) {
-            logger.debug(String.format(
-                    "onDialogRequestEricsson for DialogId=%d DestinationReference=%s OriginReference=%s ",
-                    mapDialog.getLocalDialogId(), destReference, origReference));
+            logger.debug(String.format("onDialogRequest for DialogId=%d DestinationReference=%s OriginReference=%s ",
+                    mapd.getLocalDialogId(), as, as1, as2, as3));
         }
     }
 

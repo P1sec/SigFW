@@ -109,6 +109,8 @@ import org.mobicents.protocols.ss7.map.api.service.mobility.oam.ActivateTraceMod
 import org.mobicents.protocols.ss7.map.api.service.mobility.oam.ActivateTraceModeResponse_Mobility;
 import org.mobicents.protocols.ss7.map.api.service.mobility.subscriberInformation.AnyTimeInterrogationRequest;
 import org.mobicents.protocols.ss7.map.api.service.mobility.subscriberInformation.AnyTimeInterrogationResponse;
+import org.mobicents.protocols.ss7.map.api.service.mobility.subscriberInformation.AnyTimeSubscriptionInterrogationRequest;
+import org.mobicents.protocols.ss7.map.api.service.mobility.subscriberInformation.AnyTimeSubscriptionInterrogationResponse;
 import org.mobicents.protocols.ss7.map.api.service.mobility.subscriberInformation.GeodeticInformation;
 import org.mobicents.protocols.ss7.map.api.service.mobility.subscriberInformation.GeographicalInformation;
 import org.mobicents.protocols.ss7.map.api.service.mobility.subscriberInformation.LocationInformation;
@@ -176,6 +178,8 @@ import org.mobicents.protocols.ss7.map.api.service.supplementary.UnstructuredSSN
 import org.mobicents.protocols.ss7.map.api.service.supplementary.UnstructuredSSRequest;
 import org.mobicents.protocols.ss7.map.api.service.supplementary.UnstructuredSSResponse;
 import org.mobicents.protocols.ss7.map.datacoding.CBSDataCodingSchemeImpl;
+import org.mobicents.protocols.ss7.sccp.LoadSharingAlgorithm;
+import org.mobicents.protocols.ss7.sccp.NetworkIdState;
 import org.mobicents.protocols.ss7.sccp.OriginationType;
 import org.mobicents.protocols.ss7.sccp.RemoteSccpStatus;
 import org.mobicents.protocols.ss7.sccp.RuleType;
@@ -334,12 +338,12 @@ public class SS7Honeypot extends AbstractSctpBase implements SccpListener, MAPDi
         gt = this.sccpProvider.getParameterFactory().createGlobalTitle("*", 0, org.mobicents.protocols.ss7.indicator.NumberingPlan.ISDN_TELEPHONY, null, NatureOfAddress.INTERNATIONAL);
         SccpAddress pattern = this.sccpProvider.getParameterFactory().createSccpAddress(RoutingIndicator.ROUTING_BASED_ON_GLOBAL_TITLE, gt, 0, 0);
         String mask = "K";
-        ((RouterImpl) this.sccpStack.getRouter()).addRule(1, RuleType.SOLITARY, null, OriginationType.LOCAL, pattern, mask, 1, -1, null, 0);
+        ((RouterImpl) this.sccpStack.getRouter()).addRule(1, RuleType.SOLITARY, LoadSharingAlgorithm.Bit0, OriginationType.LOCAL, pattern, mask, 1, -1, null, 0, null);
         
         gt = this.sccpProvider.getParameterFactory().createGlobalTitle("*", 0, org.mobicents.protocols.ss7.indicator.NumberingPlan.ISDN_TELEPHONY, null, NatureOfAddress.INTERNATIONAL);
         pattern = this.sccpProvider.getParameterFactory().createSccpAddress(RoutingIndicator.ROUTING_BASED_ON_GLOBAL_TITLE, gt, 0, 0);
         mask = "K";
-        ((RouterImpl) this.sccpStack.getRouter()).addRule(2, RuleType.SOLITARY, null, OriginationType.REMOTE, pattern, mask, 2, -1, null, 0);
+        ((RouterImpl) this.sccpStack.getRouter()).addRule(2, RuleType.SOLITARY, LoadSharingAlgorithm.Bit0, OriginationType.REMOTE, pattern, mask, 2, -1, null, 0, null);
         
         logger.debug("Initialized SCCP Stack ....");
     }
@@ -572,19 +576,12 @@ public class SS7Honeypot extends AbstractSctpBase implements SccpListener, MAPDi
 	 * 
 	 * @see
 	 * org.mobicents.protocols.ss7.map.api.MAPDialogListener#onDialogRequestEricsson
-	 * (org.mobicents.protocols.ss7.map.api.MAPDialog,
-	 * org.mobicents.protocols.ss7.map.api.primitives.AddressString,
-	 * org.mobicents.protocols.ss7.map.api.primitives.AddressString,
-	 * org.mobicents.protocols.ss7.map.api.primitives.IMSI,
-	 * org.mobicents.protocols.ss7.map.api.primitives.AddressString)
      */
     @Override
-    public void onDialogRequestEricsson(MAPDialog mapDialog, AddressString destReference, AddressString origReference,
-            IMSI imsi, AddressString vlr) {
+    public void onDialogRequestEricsson(MAPDialog mapd, AddressString as, AddressString as1, AddressString as2, AddressString as3) {
         if (logger.isDebugEnabled()) {
-            logger.debug(String.format(
-                    "onDialogRequestEricsson for DialogId=%d DestinationReference=%s OriginReference=%s ",
-                    mapDialog.getLocalDialogId(), destReference, origReference));
+            logger.debug(String.format("onDialogRequest for DialogId=%d DestinationReference=%s OriginReference=%s ",
+                    mapd.getLocalDialogId(), as, as1, as2, as3));
         }
     }
 
@@ -1370,7 +1367,7 @@ public class SS7Honeypot extends AbstractSctpBase implements SccpListener, MAPDi
             if (invokeId > 127) { invokeId = 127; }
             if (invokeId < -128) { invokeId = -128; }
             
-            curDialog.addSendRoutingInfoForSMResponse(invokeId, imsi, lwlms, null /*cnt*/, Boolean.FALSE);
+            curDialog.addSendRoutingInfoForSMResponse(invokeId, imsi, lwlms, null /*cnt*/, Boolean.FALSE, null);
 
         } catch (MAPException e) {
             logger.error("Error while sending SendRoutingInfoForSMResponse ", e);
@@ -1460,5 +1457,25 @@ public class SS7Honeypot extends AbstractSctpBase implements SccpListener, MAPDi
 
     public void onPcState(int i, SignallingPointStatus sps, int i1, RemoteSccpStatus rss) {
         //logger.debug("[[[[[[[[[[    onPcState      ]]]]]]]]]]");
+    }
+
+    public void onCoordResponse(int i, int i1) {
+        logger.debug("[[[[[[[[[[    onCoordResponse      ]]]]]]]]]]");
+    }
+
+    public void onPcState(int i, SignallingPointStatus sps, Integer intgr, RemoteSccpStatus rss) {
+        logger.debug("[[[[[[[[[[    onPcState      ]]]]]]]]]]");
+    }
+
+    public void onNetworkIdState(int i, NetworkIdState nis) {
+        logger.debug("[[[[[[[[[[    onNetworkIdState      ]]]]]]]]]]");
+    }
+
+    public void onAnyTimeSubscriptionInterrogationRequest(AnyTimeSubscriptionInterrogationRequest atsir) {
+        logger.debug("[[[[[[[[[[    onAnyTimeSubscriptionInterrogationRequest      ]]]]]]]]]]");
+    }
+
+    public void onAnyTimeSubscriptionInterrogationResponse(AnyTimeSubscriptionInterrogationResponse atsir) {
+        logger.debug("[[[[[[[[[[    onAnyTimeSubscriptionInterrogationResponse      ]]]]]]]]]]");
     }
 }
