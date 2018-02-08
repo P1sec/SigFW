@@ -17,12 +17,15 @@
 				{
 					"server_name": "sctp_server",
 					"host_address": "127.0.0.1",
-					"port": "3869"
+					"port": "3869",
+					"accept_anonymous_associations_comment": "# set true if the FW accepts SCTP associations from random source port",
+					"accept_anonymous_associations": "false"
 				}
 			],
 			"sctp_server_association": [
 				{
 					"peer_address": "127.0.0.1",
+					"peer_port_comment": "# Use 0 to use random source port from FW -> Server",
 					"peer_port": "13868",
 					"server_name": "sctp_server",
 					"assoc_name": "sctp_from_client_to_firewall"

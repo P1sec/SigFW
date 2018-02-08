@@ -413,7 +413,7 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
             );
         }
         
-        // 2. Create SCTP Server Association
+        // 2. Create Client <-> FW Association
         List<Map<String, Object>> sctp_server_association = SS7FirewallConfig.get("$.sigfw_configuration.sctp.sctp_server_association");
         for (int i = 0; i < sctp_server_association.size(); i++) {
             sctpManagement.addServerAssociation(
@@ -426,7 +426,7 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
         }
         
         
-        // 3. Create SCTP Client Association
+        // 3. Create FW <-> Server Association
         List<Map<String, Object>> sctp_association = SS7FirewallConfig.get("$.sigfw_configuration.sctp.sctp_association");
         for (int i = 0; i < sctp_association.size(); i++) {
             sctpManagement.addAssociation(

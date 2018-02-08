@@ -119,8 +119,6 @@ import org.mobicents.protocols.api.Server;
 import org.mobicents.protocols.api.ServerListener;
 import org.mobicents.protocols.sctp.AssociationImpl;
 import org.mobicents.protocols.sctp.ManagementImpl;
-import static ss7fw.SS7Firewall.unitTestingFlags_sendSccpErrorMessage;
-import static ss7fw.SS7Firewall.unitTestingFlags_sendSccpMessage;
 
 /**
  * @author Martin Kacer
@@ -165,6 +163,7 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
 
     // SCTP
     public static ManagementImpl sctpManagement;
+    public static List<Association> anonymousAssociations = new ArrayList<Association>();
 
     // Diameter
     public final MessageParser parser = new MessageParser();
@@ -255,21 +254,36 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
         this.sctpManagement.setServerListener(this);
 
 
-        // 1. Create SCTP Server
+        // 1. Create SCTP Server     
         List<Map<String, Object>> sctp_server = DiameterFirewallConfig.get("$.sigfw_configuration.sctp.sctp_server");
         for (int i = 0; i < sctp_server.size(); i++) {
-            this.sctpManagement.addServer(
-                    (String)sctp_server.get(i).get("server_name"),
-                    (String)sctp_server.get(i).get("host_address"),
-                    Integer.parseInt((String)sctp_server.get(i).get("port")),
-                    ipChannelType, null
-            );
+        
+            String acceptAnonymousAssociations = (String)sctp_server.get(i).get("accept_anonymous_associations");
+                    
+            if(acceptAnonymousAssociations != null && acceptAnonymousAssociations.equals("true")) {
+                this.sctpManagement.addServer(
+                        (String)sctp_server.get(i).get("server_name"),
+                        (String)sctp_server.get(i).get("host_address"),
+                        Integer.parseInt((String)sctp_server.get(i).get("port")),
+                        ipChannelType,
+                        true,  //acceptAnonymousConnections
+                        0,     //maxConcurrentConnectionsCount
+                        null   //extraHostAddresses
+                );
+            } else {
+                this.sctpManagement.addServer(
+                        (String)sctp_server.get(i).get("server_name"),
+                        (String)sctp_server.get(i).get("host_address"),
+                        Integer.parseInt((String)sctp_server.get(i).get("port")),
+                        ipChannelType, null
+                );
+            }
         }
 
-        // 2. Create SCTP Server Association
+        // 2. Create Client <-> FW Association
         List<Map<String, Object>> sctp_server_association = DiameterFirewallConfig.get("$.sigfw_configuration.sctp.sctp_server_association");
         for (int i = 0; i < sctp_server_association.size(); i++) {
-           AssociationImpl serverAssociation = this.sctpManagement.addServerAssociation(
+            AssociationImpl serverAssociation = this.sctpManagement.addServerAssociation(
                     (String)sctp_server_association.get(i).get("peer_address"),
                     Integer.parseInt((String)sctp_server_association.get(i).get("peer_port")),
                     (String)sctp_server_association.get(i).get("server_name"),
@@ -281,7 +295,7 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
         }
 
 
-        // 3. Create SCTP Client Association
+        // 3. Create FW <-> Server Association
         List<Map<String, Object>> sctp_association = DiameterFirewallConfig.get("$.sigfw_configuration.sctp.sctp_association");
         for (int i = 0; i < sctp_association.size(); i++) {
             AssociationImpl clientAssociation = this.sctpManagement.addAssociation(
@@ -1265,28 +1279,41 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
         
             PayloadData payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, payloadProtocolId, streamNumber);
 
-            // Server associations
+            // FW Server associations (Client -> FW)
             for (int i = 0; i < sctp_server_association.size(); i++) {
-                if (origin_asctn.getName().equals((String)sctp_server_association.get(i).get("assoc_name"))) {
+                // The anonymous association does not have name, but can be configured in FW config as server association. Therefor run this code also without association name.
+                if (origin_asctn.getName() == null || origin_asctn.getName().equals((String)sctp_server_association.get(i).get("assoc_name"))) {
                     try {
                         // TODO round robin
                         if (forward_indicator) {
                             this.sctpManagement.getAssociation((String)sctp_association.get(0).get("assoc_name")).send(payloadData);
                         } else {
-                            this.sctpManagement.getAssociation((String)sctp_server_association.get(0).get("assoc_name")).send(payloadData);
+                            // try to use anonymous associations first
+                            if (!this.anonymousAssociations.isEmpty()) {
+                                this.anonymousAssociations.get(0).send(payloadData);
+                            } else {
+                                this.sctpManagement.getAssociation((String)sctp_server_association.get(0).get("assoc_name")).send(payloadData);
+                            }
                         }
                     } catch (Exception ex) {
                         java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
                     }
                 }
+                
             }
-            // Client associations
+            // FW Client associations (Server -> FW)
             for (int i = 0; i < sctp_association.size(); i++) {
-                if (origin_asctn.getName().equals((String)sctp_association.get(i).get("assoc_name"))) {
+                // all associations from Server -> FW should have names 
+                if (origin_asctn.getName() != null && origin_asctn.getName().equals((String)sctp_association.get(i).get("assoc_name"))) {
                     try {
                         // TODO round robin
                         if (forward_indicator) {
-                            this.sctpManagement.getAssociation((String)sctp_server_association.get(0).get("assoc_name")).send(payloadData);
+                            // try to use anonymous associations first
+                            if (!this.anonymousAssociations.isEmpty()) {
+                                this.anonymousAssociations.get(0).send(payloadData);
+                            } else {
+                                this.sctpManagement.getAssociation((String)sctp_server_association.get(0).get("assoc_name")).send(payloadData);
+                            }
                         } else {
                             this.sctpManagement.getAssociation((String)sctp_association.get(0).get("assoc_name")).send(payloadData);
                         }
@@ -1466,7 +1493,7 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
             // ------------------------------------------
             
             // ----------- Pass CER, DWR, DPR -----------
-            if (cc == 257 || cc == 280 || cc == 282) {
+            if (cc == 257 || cc == 280 || cc == 282) {           
                 sendDiameterMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, true, lua_hmap);
                 return;
             }
@@ -1597,9 +1624,13 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
             
             // ------------- IDS API rules ---------------
             if (connectorIDS != null) {
-                if(connectorIDS.evalDiameterMessage(DatatypeConverter.printHexBinary(pd.getData())) == false) {
-                    firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "DIAMETER FW: Blocked by IDS " + i, lua_hmap);
-                    return;
+                try {
+                    if(connectorIDS.evalDiameterMessage(DatatypeConverter.printHexBinary(pd.getData())) == false) {
+                        firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "DIAMETER FW: Blocked by IDS " + i, lua_hmap);
+                        return;
+                    }
+                } catch (Exception ex) {
+                    // TODO
                 }
             }
             // ------------------------------------------       
@@ -1864,6 +1895,15 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
 
     public void onNewRemoteConnection(Server server, Association asctn) {
         logger.debug("[[[[[[[[[[    onNewRemoteConnection      ]]]]]]]]]]");
+        
+        try {
+            asctn.acceptAnonymousAssociation(this);
+            
+            this.anonymousAssociations.add(asctn);
+            
+        } catch (Exception ex) {
+            java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 
     public void onCommunicationUp(Association asctn, int i, int i1) {
@@ -1872,6 +1912,11 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
 
     public void onCommunicationShutdown(Association asctn) {
         logger.debug("[[[[[[[[[[    onCommunicationShutdown      ]]]]]]]]]]");
+        
+        if(this.anonymousAssociations.contains(asctn)) {
+            this.anonymousAssociations.remove(asctn);
+        }
+        
     }
 
     public void onCommunicationLost(Association asctn) {
@@ -1880,6 +1925,7 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
 
     public void onCommunicationRestart(Association asctn) {
         logger.debug("[[[[[[[[[[    onNewRemoteConnection      ]]]]]]]]]]");
+        
     }
     
     public void inValidStreamId(PayloadData pd) {
