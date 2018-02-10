@@ -25,7 +25,6 @@
 			"sctp_server_association": [
 				{
 					"peer_address": "127.0.0.1",
-					"peer_port_comment": "# Use 0 to use random source port from FW -> Server",
 					"peer_port": "13868",
 					"server_name": "sctp_server",
 					"assoc_name": "sctp_from_client_to_firewall"
