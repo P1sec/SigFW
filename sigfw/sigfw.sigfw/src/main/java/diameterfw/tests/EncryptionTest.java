@@ -32,6 +32,7 @@ import java.security.MessageDigest;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.SecureRandom;
+import java.security.Signature;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
@@ -243,6 +244,23 @@ public class EncryptionTest {
         System.out.println("plainText = " + new String(plainTextAES));
         
         // -----------------------------------------------------
+        // --------------- ECDSA signature --------------------- 
+        
+        String str = "This is string to sign";
+        
+        // Sign
+        Signature dsa = Signature.getInstance("SHA256withECDSA");
+        dsa.initSign(kp_1.getPrivate());
+        dsa.update(str.getBytes("UTF-8"));
+        byte[] realSig = dsa.sign();
+        System.out.println("ECDSA Signature = " + Base64.getEncoder().encodeToString(realSig));
+        
+        // Verify
+        Signature ecdsaVerify = Signature.getInstance("SHA256withECDSA");
+        ecdsaVerify.initVerify(kp_1.getPublic());
+        ecdsaVerify.update(str.getBytes("UTF-8"));
+        boolean result = ecdsaVerify.verify(realSig);
+        System.out.println("ECDSA Verify Result = " + result);
         
     }
     
