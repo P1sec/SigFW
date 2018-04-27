@@ -23,7 +23,8 @@
  */
 package diameterfw;
 
-import static diameterfw.DiameterFirewallConfig.keyFactory;
+import com.p1sec.sigfw.SigFW_interface.CryptoInterface;
+import sigfw.common.ExternalFirewallRules;
 import sigfw.connectorIDS.ConnectorIDS;
 import sigfw.connectorIDS.ConnectorIDSModuleRest;
 import sigfw.connectorMThreat.ConnectorMThreat;
@@ -119,6 +120,18 @@ import org.mobicents.protocols.api.Server;
 import org.mobicents.protocols.api.ServerListener;
 import org.mobicents.protocols.sctp.AssociationImpl;
 import org.mobicents.protocols.sctp.ManagementImpl;
+import static diameterfw.DiameterFirewallConfig.keyFactoryRSA;
+import static diameterfw.DiameterFirewallConfig.keyFactoryEC;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.security.interfaces.ECPrivateKey;
+import java.security.interfaces.ECPublicKey;
+import java.security.interfaces.RSAPrivateKey;
+import com.p1sec.sigfw.SigFW_interface.FirewallRulesInterface;
+import sigfw.common.Crypto;
+import sigfw.common.Utils;
+import static sigfw.common.Utils.concatByteArray;
+import static sigfw.common.Utils.splitByteArray;
 
 /**
  * @author Martin Kacer
@@ -180,6 +193,12 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
     static ConcurrentLinkedDeque<String> mThreat_alerts = new ConcurrentLinkedDeque<String>();
     private static ConnectorMThreat connectorMThreat = null;
     
+    // Externel Firewall Rules Interface
+    FirewallRulesInterface externalFirewallRules = new ExternalFirewallRules();
+    
+    // Crypto Module
+    CryptoInterface crypto = new Crypto();
+    
     // Honeypot Diameter address NAT
     // Session Key: Origin_Host:Origin_Realm (from Request)
     // Value: Dest_Host : Dest_Realm
@@ -210,21 +229,15 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
     // Encryption Autodiscovery
     // TODO
     
-    // Diameter signature and decryption time window used for TVP
-    private final static long diameter_tvp_time_window = 30;  // in seconds
-    
     static Random randomGenerator = new Random();
 
     static final private String persistDir = "XmlDiameterFirewall";
     
-    static final private int AVP_ENCRYPTED = 1100;
-    static final private int AVP_ENCRYPTED_GROUPED = 1101;
-    static final private int AVP_SIGNATURE = 1000;
-    
     static final private int CC_AUTO_ENCRYPTION = 999;
-    static final private int AVP_AUTO_ENCRYPTION_VERION = 1101;
+    static final private int AVP_AUTO_ENCRYPTION_CAPABILITIES = 1101;
     static final private int AVP_AUTO_ENCRYPTION_REALM = 1102;
     static final private int AVP_AUTO_ENCRYPTION_PUBLIC_KEY = 1103;
+    static final private int AVP_AUTO_ENCRYPTION_PUBLIC_KEY_TYPE = 1104;
 
     /**
      * Reset Unit Testing Flags
@@ -322,6 +335,33 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
     }
 
     public void initStack(IpChannelType ipChannelType) throws Exception {
+        
+        // Initialize SigFW Extensions
+        try {
+            logger.info("Trying to load SigFW extensions from: " + "file://" + System.getProperty("user.dir")  + "/src/main/resources/SigFW_extension-1.0.jar");
+            
+            // Constructing a URL form the path to JAR
+            URL u = new URL("file://" + System.getProperty("user.dir")  + "/src/main/resources/SigFW_extension-1.0.jar");
+            
+            // Creating an instance of URLClassloader using the above URL and parent classloader 
+            ClassLoader loader  = URLClassLoader.newInstance(new URL[]{u}, ExternalFirewallRules.class.getClassLoader());
+
+            // Returns the class object
+            Class<?> mainClassRules = Class.forName("com.p1sec.sigfw.SigFW_extension.rules.ExtendedFirewallRules", true, loader);
+            externalFirewallRules = (FirewallRulesInterface) mainClassRules.getDeclaredConstructor().newInstance();
+
+            // Returns the class object
+            Class<?> mainClassCrypto = Class.forName("com.p1sec.sigfw.SigFW_extension.crypto.ExtendedCrypto", true, loader);
+            crypto = (CryptoInterface) mainClassCrypto.getDeclaredConstructor().newInstance();
+
+            
+            logger.info("Sucessfully loaded SigFW extensions ....");
+        
+        } catch (Exception e) {
+            logger.info("Failed to load SigFW extensions: " + e.toString());
+        }
+        // End of SigFW Extensions
+        
         if (logger.isInfoEnabled()) {
                 logger.info("Initializing Stack...");
         }
@@ -652,553 +692,6 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
             }
         }
     }
-        
-    /**
-     * Method to encrypt Diameter message
-     * 
-     * @param message Diameter message which will be encrypted
-     * @param publicKey Public Key used for message encryption
-     */
-    public void diameterEncrypt(Message message, PublicKey publicKey) throws InvalidKeyException {
-        
-        //logger.debug("== diameterEncrypt ==");
-        AvpSet avps = message.getAvps();
-        
-        int avps_size = avps.size();
-        
-        for (int i = 0; i < avps_size; i++) {
-            Avp a = avps.getAvpByIndex(i);
-            
-            //logger.debug("AVP[" + i + "] Code = " + a.getCode());
-            
-            if (
-                    a.getCode() != Avp.ORIGIN_HOST &&
-                    a.getCode() != Avp.ORIGIN_REALM &&
-                    a.getCode() != Avp.DESTINATION_HOST &&
-                    a.getCode() != Avp.DESTINATION_REALM &&
-                    a.getCode() != Avp.SESSION_ID &&
-                    a.getCode() != Avp.ROUTE_RECORD &&
-                    a.getCode() != AVP_ENCRYPTED &&
-                    a.getCode() != AVP_ENCRYPTED_GROUPED
-                ) {
-                
-                try {
-                    //byte[] d = a.getRawData();
-                    byte [] d = this.encodeAvp(a);
-                    
-                    // SPI(version) and TVP(timestamp)
-                    byte[] SPI = {0x00, 0x00, 0x00, 0x00};  // TODO
-                    byte[] TVP = {0x00, 0x00, 0x00, 0x00};
-
-                    long t = System.currentTimeMillis()/100;    // in 0.1s
-                    TVP[0] = (byte) ((t >> 24) & 0xFF);
-                    TVP[1] = (byte) ((t >> 16) & 0xFF);
-                    TVP[2] = (byte) ((t >>  8) & 0xFF);
-                    TVP[3] = (byte) ((t >>  0) & 0xFF);
-
-                    //DiameterFirewallConfig.cipher.init(Cipher.ENCRYPT_MODE, publicKey);
-                    //byte[] cipherText = DiameterFirewallConfig.cipher.doFinal(b);
-                    
-                    RSAPublicKey rsaPublicKey = (RSAPublicKey)publicKey;
-                    DiameterFirewallConfig.cipher.init(Cipher.ENCRYPT_MODE, publicKey);
-
-                    int keyLength = rsaPublicKey.getModulus().bitLength() / 8;
-
-                    byte[][] datas = splitByteArray(d, keyLength - 11 - 4);
-                    byte[] cipherText = null;
-                    for (byte[] b : datas) {
-                        cipherText = concatByteArray(cipherText, DiameterFirewallConfig.cipher.doFinal(concatByteArray(TVP, b)));
-                    }
-                    
-                    cipherText = concatByteArray(SPI, cipherText);
-                    
-                    //logger.debug("Add AVP Encrypted. Current index = " + i);
-                    avps.insertAvp(i, AVP_ENCRYPTED, cipherText, finished, finished);
-                    
-                    avps.removeAvpByIndex(i + 1);
-                    
-                } catch (IllegalBlockSizeException ex) {
-                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-                } catch (BadPaddingException ex) {
-                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            }
-        }
-    }
-    
-        /**
-     * Method to encrypt Diameter message v2
-     * 
-     * @param message Diameter message which will be encrypted
-     * @param publicKey Public Key used for message encryption
-     */
-    public void diameterEncrypt_v2(Message message, PublicKey publicKey) throws InvalidKeyException {
-        
-        //logger.debug("== diameterEncrypt_v2 ==");
-        AvpSet avps = message.getAvps();
-        
-        AvpSet erAvp = avps.addGroupedAvp(AVP_ENCRYPTED_GROUPED);
-        
-        for (int i = 0; i < avps.size(); i++) {
-            Avp a = avps.getAvpByIndex(i);
-            
-            //logger.debug("AVP[" + i + "] Code = " + a.getCode());
-            
-            if (
-                    a.getCode() != Avp.ORIGIN_HOST &&
-                    a.getCode() != Avp.ORIGIN_REALM &&
-                    a.getCode() != Avp.DESTINATION_HOST &&
-                    a.getCode() != Avp.DESTINATION_REALM &&
-                    a.getCode() != Avp.SESSION_ID &&
-                    a.getCode() != Avp.ROUTE_RECORD &&
-                    a.getCode() != AVP_ENCRYPTED &&
-                    a.getCode() != AVP_ENCRYPTED_GROUPED
-                ) {
-                    erAvp.addAvp(a);
-                    avps.removeAvpByIndex(i);
-                    i--;
-            }
-        }
-        
-        try {
-            //byte[] d = a.getRawData();
-            byte [] d = encodeAvpSet(erAvp);
-            
-            logger.debug("avps.size = " + erAvp.size());
-            logger.debug("plainText = " + d.toString());
-            logger.debug("plainText.size = " + d.length);
-
-            // SPI(version) and TVP(timestamp)
-            byte[] SPI = {0x00, 0x00, 0x00, 0x00};  // TODO
-            byte[] TVP = {0x00, 0x00, 0x00, 0x00};
-
-            long t = System.currentTimeMillis()/100;    // in 0.1s
-            TVP[0] = (byte) ((t >> 24) & 0xFF);
-            TVP[1] = (byte) ((t >> 16) & 0xFF);
-            TVP[2] = (byte) ((t >>  8) & 0xFF);
-            TVP[3] = (byte) ((t >>  0) & 0xFF);
-
-            //DiameterFirewallConfig.cipher.init(Cipher.ENCRYPT_MODE, publicKey);
-            //byte[] cipherText = DiameterFirewallConfig.cipher.doFinal(b);
-
-            RSAPublicKey rsaPublicKey = (RSAPublicKey)publicKey;
-            DiameterFirewallConfig.cipher.init(Cipher.ENCRYPT_MODE, publicKey);
-
-            int keyLength = rsaPublicKey.getModulus().bitLength() / 8;
-
-            byte[][] datas = splitByteArray(d, keyLength - 11 - 4);
-            byte[] cipherText = null;
-            for (byte[] b : datas) {
-                cipherText = concatByteArray(cipherText, DiameterFirewallConfig.cipher.doFinal(concatByteArray(TVP, b)));
-            }
-
-            cipherText = concatByteArray(SPI, cipherText);
-
-            //logger.debug("Add AVP Grouped Encrypted. Current index");
-            avps.removeAvp(AVP_ENCRYPTED_GROUPED);
-            avps.addAvp(AVP_ENCRYPTED_GROUPED, cipherText, finished, finished);
-
-        } catch (IllegalBlockSizeException ex) {
-            java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (BadPaddingException ex) {
-            java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-        }
-    }
-    
-    /**
-     * Method to decrypt Diameter message
-     * 
-     * @param message Diameter message which will be decrypted
-     * @param keyPair Key Pair used for message encryption
-     * @return result, empty string if successful, otherwise error message
-     */
-    public String diameterDecrypt(Message message, KeyPair keyPair) {
-        //logger.debug("== diameterDecrypt ==");
-        AvpSet avps = message.getAvps();
-        
-        int avps_size = avps.size();
-        
-        for (int i = 0; i < avps_size; i++) {
-            Avp a = avps.getAvpByIndex(i);
-            
-            //logger.debug("AVP[" + i + "] Code = " + a.getCode());
-            
-            if (a.getCode() == AVP_ENCRYPTED) {
-                logger.debug("Diameter Decryption of Encrypted AVP");
-                    
-                try {
-                    byte[] b = a.getOctetString();
-                    
-                    // SPI(version) and TVP(timestamp)
-                    byte[] SPI = {0x00, 0x00, 0x00, 0x00};
-                    byte[] TVP = {0x00, 0x00, 0x00, 0x00};
-
-                    byte[] d = null; 
-                    if (b.length >= SPI.length) {
-                        SPI = Arrays.copyOfRange(b, 0, SPI.length);
-                        d = Arrays.copyOfRange(b, SPI.length, b.length);
-                    } else {
-                        d = b;
-                    }
-
-                    // TODO verify SPI
-
-                    PrivateKey privateKey = keyPair.getPrivate();
-                    DiameterFirewallConfig.cipher.init(Cipher.DECRYPT_MODE, privateKey);
-
-                    RSAPublicKey rsaPublicKey = (RSAPublicKey)keyPair.getPublic();
-                    int keyLength = rsaPublicKey.getModulus().bitLength() / 8;
-                    
-                    byte[][] datas = splitByteArray(d, keyLength/* - 11*/);
-                    byte[] decryptedText = null;
-                    for (byte[] _b : datas) {
-                        d = DiameterFirewallConfig.cipher.doFinal(_b);
-                        
-                        // ---- Verify TVP from Security header ----
-                        long t = System.currentTimeMillis()/100;    // in 0.1s
-                        TVP[0] = (byte) ((t >> 24) & 0xFF);
-                        TVP[1] = (byte) ((t >> 16) & 0xFF);
-                        TVP[2] = (byte) ((t >>  8) & 0xFF);
-                        TVP[3] = (byte) ((t >>  0) & 0xFF);
-                        t = 0;
-                        for (int j = 0; j < TVP.length; j++) {
-                            t =  ((t << 8) + (TVP[j] & 0xff));
-                        }
-
-                        TVP[0] = d[0]; TVP[1] = d[1]; TVP[2] = d[2]; TVP[3] = d[3];
-                        long t_tvp = 0;
-                        for (int j = 0; j < TVP.length; j++) {
-                            t_tvp =  ((t_tvp << 8) + (TVP[j] & 0xff));
-                        }
-                        if (Math.abs(t_tvp-t) > diameter_tvp_time_window*10) {
-                            return "DIAMETER FW: Blocked in decryption, Wrong timestamp in TVP (received: " + t_tvp + ", current: " + t + ")";
-                        }
-                        d = Arrays.copyOfRange(d, TVP.length, d.length);
-                        // ---- End of Verify TVP ----
-                        
-                        
-                        decryptedText = concatByteArray(decryptedText, d);
-                    }
-                   
-                    
-                    //logger.debug("Add AVP Decrypted. Current index = " + i);
-                    //AvpImpl avp = new AvpImpl(code, (short) flags, (int) vendor, rawData);
-                    
-                    //avps.insertAvp(i, ByteBuffer.wrap(cc).order(ByteOrder.BIG_ENDIAN).getInt(), d, finished, finished);
-                    
-                    AvpImpl _a = (AvpImpl)decodeAvp(decryptedText);
-                    avps.insertAvp(i, _a.getCode(), _a.getRawData(), _a.vendorID, _a.isMandatory, finished);
-                    
-                    avps.removeAvpByIndex(i + 1);
-                    
-                } catch (InvalidKeyException ex) {
-                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-                } catch (IllegalBlockSizeException ex) {
-                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-                } catch (BadPaddingException ex) {
-                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-                } catch (AvpDataException ex) {
-                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-                } catch (IOException ex) {
-                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            } else if (a.getCode() == AVP_ENCRYPTED_GROUPED) {
-                logger.debug("Diameter Decryption of Grouped Encrypted AVP");
-                    
-                try {
-                    byte[] b = a.getOctetString();
-                    
-                    // SPI(version) and TVP(timestamp)
-                    byte[] SPI = {0x00, 0x00, 0x00, 0x00};
-                    byte[] TVP = {0x00, 0x00, 0x00, 0x00};
-
-                    byte[] d = null; 
-                    if (b.length >= SPI.length) {
-                        SPI = Arrays.copyOfRange(b, 0, SPI.length);
-                        d = Arrays.copyOfRange(b, SPI.length, b.length);
-                    } else {
-                        d = b;
-                    }
-
-                    // TODO verify SPI
-
-                    PrivateKey privateKey = keyPair.getPrivate();
-                    DiameterFirewallConfig.cipher.init(Cipher.DECRYPT_MODE, privateKey);
-
-                    RSAPublicKey rsaPublicKey = (RSAPublicKey)keyPair.getPublic();
-                    int keyLength = rsaPublicKey.getModulus().bitLength() / 8;
-                    
-                    byte[][] datas = splitByteArray(d, keyLength/* - 11*/);
-                    byte[] decryptedText = null;
-                    for (byte[] _b : datas) {
-                        d = DiameterFirewallConfig.cipher.doFinal(_b);
-                        
-                        // ---- Verify TVP from Security header ----
-                        long t = System.currentTimeMillis()/100;    // in 0.1s
-                        TVP[0] = (byte) ((t >> 24) & 0xFF);
-                        TVP[1] = (byte) ((t >> 16) & 0xFF);
-                        TVP[2] = (byte) ((t >>  8) & 0xFF);
-                        TVP[3] = (byte) ((t >>  0) & 0xFF);
-                        t = 0;
-                        for (int j = 0; j < TVP.length; j++) {
-                            t =  ((t << 8) + (TVP[j] & 0xff));
-                        }
-
-                        TVP[0] = d[0]; TVP[1] = d[1]; TVP[2] = d[2]; TVP[3] = d[3];
-                        long t_tvp = 0;
-                        for (int j = 0; j < TVP.length; j++) {
-                            t_tvp =  ((t_tvp << 8) + (TVP[j] & 0xff));
-                        }
-                        if (Math.abs(t_tvp-t) > diameter_tvp_time_window*10) {
-                            return "DIAMETER FW: Blocked in decryption, Wrong timestamp in TVP (received: " + t_tvp + ", current: " + t + ")";
-                        }
-                        d = Arrays.copyOfRange(d, TVP.length, d.length);
-                        // ---- End of Verify TVP ----
-                        
-                        
-                        decryptedText = concatByteArray(decryptedText, d);
-                    }
-                   
-                    
-                    //logger.debug("Add AVP Decrypted. Current index = " + i);
-                    //AvpImpl avp = new AvpImpl(code, (short) flags, (int) vendor, rawData);
-                    
-                    //avps.insertAvp(i, ByteBuffer.wrap(cc).order(ByteOrder.BIG_ENDIAN).getInt(), d, finished, finished);
-                    
-                    //logger.debug("decryptedText = " + decryptedText.toString());
-                    //logger.debug("decryptedText.size = " + decryptedText.length);
-                    AvpSetImpl _avps = (AvpSetImpl)decodeAvpSet(decryptedText, 0);
-                    
-                    //logger.debug("SIZE = " + _avps.size());
-                    
-                    for (int j = 0; j < _avps.size(); j++) {
-                        AvpImpl _a = (AvpImpl)_avps.getAvpByIndex(j);
-                        //logger.debug("addAVP = " + _a.getCode());
-                        avps.insertAvp(i, _a.getCode(), _a.getRawData(), _a.vendorID, _a.isMandatory, finished);
-                    }
-                    avps.removeAvpByIndex(i + _avps.size());
-                    
-                } catch (InvalidKeyException ex) {
-                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-                } catch (IllegalBlockSizeException ex) {
-                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-                } catch (BadPaddingException ex) {
-                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-                } catch (AvpDataException ex) {
-                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-                } catch (IOException ex) {
-                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            }
-        }
-        
-        return "";
-    }
-    
-    /**
-     * Method to sign Diameter message
-     * 
-     * @param message Diameter message which will be signed
-     * @param keyPair KeyPair used to sign message
-     */
-    public void diameterSign(Message message, KeyPair keyPair) {
-        //logger.debug("Message Sign = " + message.getAvps().toString());
-        
-        if (keyPair != null) {
-            PrivateKey privateKey = keyPair.getPrivate();
-            if(privateKey != null) {
-        
-                AvpSet avps = message.getAvps();
-
-                boolean signed = false;
-                for (int i = 0; i < avps.size(); i++) {
-                    Avp a = avps.getAvpByIndex(i);
-                    if (a.getCode() == AVP_SIGNATURE) {
-                        signed = true;
-                        break;
-                    }
-                }
-                
-                if (!signed) {
-                    // Reserved (currently not used) - Signature Version
-                    // TODO
-                    byte[] VER = {0x00, 0x00, 0x00, 0x01};
-                    
-                    // TVP
-                    byte[] TVP = {0x00, 0x00, 0x00, 0x00};
-
-                    long t = System.currentTimeMillis()/100;    // in 0.1s
-                    TVP[0] = (byte) ((t >> 24) & 0xFF);
-                    TVP[1] = (byte) ((t >> 16) & 0xFF);
-                    TVP[2] = (byte) ((t >>  8) & 0xFF);
-                    TVP[3] = (byte) ((t >>  0) & 0xFF);
-
-                    long t_tvp = 0;
-                    for (int j = 0; j < TVP.length; j++) {
-                        t_tvp =  ((t_tvp << 8) + (TVP[j] & 0xff));
-                    }
-                    
-                    // Signature
-                    try {
-                        DiameterFirewallConfig.signature.initSign(privateKey);
-
-                        String dataToSign = message.getApplicationId() + ":" + message.getCommandCode() + ":" + message.getEndToEndIdentifier() + ":" + t_tvp;
-                        
-                        // jDiameter AVPs are not ordered, and the order could be changed by DRAs in IPX, so order AVPs by sorting base64 strings
-                        List<String> strings = new ArrayList<String>();
-                        for (int i = 0; i < avps.size(); i++) {
-                            Avp a = avps.getAvpByIndex(i);
-                            if (a.getCode() != Avp.RECORD_ROUTE) {
-                                strings.add(a.getCode() + "|" + Base64.getEncoder().encodeToString(a.getRawData()));
-                            }
-                        }
-                        Collections.sort(strings);
-                        for (String s : strings) {
-                             dataToSign += ":" + s;
-                        }
-                        
-                        /*for (int i = 0; i < avps.size(); i++) {
-                            Avp a = avps.getAvpByIndex(i);
-                            if (a.getCode() != Avp.RECORD_ROUTE) {
-                                dataToSign += ":" + Base64.getEncoder().encodeToString(a.getRawData());
-                            }
-                        }*/
-                        
-                        DiameterFirewallConfig.signature.update(dataToSign.getBytes());
-                        byte[] signatureBytes = DiameterFirewallConfig.signature.sign();
-                        logger.debug("Adding Diameter Signed Data: " + dataToSign);
-                        logger.debug("Adding Diameter Signature: " + Base64.getEncoder().encodeToString(signatureBytes));
-
-                        avps.addAvp(AVP_SIGNATURE, concatByteArray(VER, concatByteArray(TVP, signatureBytes)));
-
-                    } catch (InvalidKeyException ex) {
-                        java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-                    } catch (SignatureException ex) {
-                        java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-                    }
-                }          
-            }
-        }
-    }
-    
-    /**
-     * Method to verify the Diameter message signature
-     * 
-     * 
-     * @param message Diameter message which will be verified
-     * @param publicKey Public Key used to verify message signature
-     * @return result, empty string if successful, otherwise error message
-     */
-    public String diameterVerify(Message message, PublicKey publicKey) {
-        //logger.debug("Message Verify = " + message.getAvps().toString());
-        
-        if (publicKey == null) {
-            return "";
-        }
-        
-        List<Integer> signed_index = new ArrayList<Integer>();
-        
-        AvpSet avps = message.getAvps();
-
-        for (int i = 0; i < avps.size(); i++) {
-            Avp a = avps.getAvpByIndex(i);
-            if (a.getCode() == AVP_SIGNATURE) {
-                signed_index.add(i);
-            }
-        } 
-        
-        if (signed_index.size() > 0) {
-            try {
-                // read signature component
-                Avp a = avps.getAvpByIndex(signed_index.get(0));
-                byte[] ad;
-
-                ad = a.getOctetString();
-
-                byte[] signatureBytes = null;
-                long t_tvp = 0;
-                byte[] TVP = {0x00, 0x00, 0x00, 0x00};
-                
-                // Reserved (currently not used) - Signature Version
-                // TODO
-                int pos = 0;
-                byte[] VER = {0x00, 0x00, 0x00, 0x01};
-                
-                pos = 4;
-                // TVP
-                if (ad != null && ad.length > TVP.length + pos) {
-                    // ---- Verify TVP from Security header ----
-                    long t = System.currentTimeMillis()/100;    // in 0.1s
-                    TVP[0] = (byte) ((t >> 24) & 0xFF);
-                    TVP[1] = (byte) ((t >> 16) & 0xFF);
-                    TVP[2] = (byte) ((t >>  8) & 0xFF);
-                    TVP[3] = (byte) ((t >>  0) & 0xFF);
-                    t = 0;
-                    for (int i = 0; i < TVP.length; i++) {
-                        t =  ((t << 8) + (TVP[i] & 0xff));
-                    }
-
-                    for (int i = 0; i < TVP.length; i++) {
-                        t_tvp =  ((t_tvp << 8) + (ad[i + pos] & 0xff));
-                    }
-                    
-                    if (Math.abs(t_tvp-t) > diameter_tvp_time_window*10) {
-                        return "DIAMETER FW: DIAMETER verify signature. Wrong timestamp in TVP (received: " + t_tvp + ", current: " + t + ")";
-                    }
-                    // ---- End of Verify TVP ----
-                }
-
-            
-                // Signature
-                if (ad != null) {
-                    signatureBytes = Arrays.copyOfRange(ad, TVP.length + pos, ad.length);
-                }
-
-                // remove all signature components
-                for (int i = 0; i < signed_index.size(); i++) {
-                    avps.removeAvpByIndex(signed_index.get(i));
-                }
-
-                // verify signature 
-                String dataToSign = message.getApplicationId() + ":" + message.getCommandCode() + ":" + message.getEndToEndIdentifier() + ":" + t_tvp;
-                
-                // jDiameter AVPs are not ordered, so order AVPs by sorting base64 strings
-                List<String> strings = new ArrayList<String>();
-                for (int i = 0; i < avps.size(); i++) {
-                    a = avps.getAvpByIndex(i);
-                    if (a.getCode() != Avp.RECORD_ROUTE) {
-                        strings.add(a.getCode() + "|" + Base64.getEncoder().encodeToString(a.getRawData()));
-                    }
-                }
-                Collections.sort(strings);
-                for (String s : strings) {
-                     dataToSign += ":" + s;
-                }
-
-                /*for (int i = 0; i < avps.size(); i++) {
-                    Avp a = avps.getAvpByIndex(i);
-                    if (a.getCode() != Avp.RECORD_ROUTE) {
-                        dataToSign += ":" + Base64.getEncoder().encodeToString(a.getRawData());
-                    }
-                }*/
-                
-                DiameterFirewallConfig.signature.initVerify(publicKey);
-                DiameterFirewallConfig.signature.update(dataToSign.getBytes());
-                if (signatureBytes != null && DiameterFirewallConfig.signature.verify(signatureBytes)) {
-                    return "";
-                }
-
-            } catch (InvalidKeyException ex) {
-                java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-            } catch (SignatureException ex) {
-                java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-            } catch (AvpDataException ex) {
-                java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-            }
-        }
-        
-        return "DIAMETER FW: Wrong DIAMETER signature";
-    }
     
     /**
      * Method to send Diameter data message.
@@ -1507,7 +1000,7 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
                     KeyPair keyPair = DiameterFirewallConfig.destination_realm_decryption.get(dest_realm);
                     
                     // decrypt
-                    String r = diameterDecrypt(msg, keyPair);
+                    String r = crypto.diameterDecrypt(msg, keyPair);
                     if (!r.equals("")) {
                         firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, r, lua_hmap);
                         return;
@@ -1526,7 +1019,7 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
                     logger.debug("Diameter Decryption of Answer for Destination Realm = " + _dest_realm);
 
                     // decrypt
-                    String r = diameterDecrypt(msg, keyPair);
+                    String r = crypto.diameterDecrypt(msg, keyPair);
                     if (!r.equals("")) {
                         firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, r, lua_hmap);
                         return;
@@ -1589,6 +1082,11 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
 
                 }
             }
+            // -------------- Externel Firewall rules -----------------
+            if (externalFirewallRules.diameterFirewallRules(asctn, pd) == false) {
+                firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "DIAMETER FW: Match with Externel Firewall rules", lua_hmap);
+                return;
+            }
             
             // -------------- LUA rules -----------------
             ScriptEngineManager mgr = new ScriptEngineManager();
@@ -1649,13 +1147,22 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
                     if (myKeyPair != null) {
                         Answer answer = ((IMessage)(msg)).createAnswer(ResultCode.SUCCESS);
                         
-                        // Reserved (currently not used) - Version
+                        // Capabilities
                         // TODO
-                        answer.getAvps().addAvp(AVP_AUTO_ENCRYPTION_VERION, "v1".getBytes());
+                        answer.getAvps().addAvp(AVP_AUTO_ENCRYPTION_CAPABILITIES, "Av1".getBytes());
 
                         // Realm
                         answer.getAvps().addAvp(AVP_AUTO_ENCRYPTION_REALM, dest_realm.getBytes());
 
+                        // Public key type
+                        String publicKeyType = "";
+                        if (myKeyPair.getPublic() instanceof RSAPublicKey) {
+                            publicKeyType = "RSA";
+                        } else if (myKeyPair.getPublic() instanceof ECPublicKey) {
+                            publicKeyType = "EC";
+                        }
+                        answer.getAvps().addAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY_TYPE, publicKeyType.getBytes());
+                        
                         // Public key
                         answer.getAvps().addAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY,myKeyPair.getPublic().getEncoded());
                         
@@ -1685,7 +1192,7 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
                  && msg.getAvps() != null) {
                     logger.debug("Processing Autodiscovery Result");
                     
-                    // Reserved (currently not used) - Public key type
+                    // Capabilities
                     // TODO
                     
                     // Realm prefix
@@ -1695,15 +1202,28 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
                         realm = new String(d2);
                     }
                     
+                    // Public key type
+                    String publicKeyType = "RSA";
+                    if (msg.getAvps().getAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY_TYPE) != null) {
+                        byte[] d3 = msg.getAvps().getAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY_TYPE).getOctetString();
+                        
+                        publicKeyType = new String(d3);                       
+                    }
+                    
                     // Public key
                     if (msg.getAvps().getAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY) != null) {
-                        byte[] d3 = msg.getAvps().getAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY).getOctetString();
+                        byte[] d4 = msg.getAvps().getAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY).getOctetString();
                         // TODO add method into config to add public key
-                        byte[] publicKeyBytes =  d3;
+                        byte[] publicKeyBytes =  d4;
                         try {
                             X509EncodedKeySpec pubKeySpec = new X509EncodedKeySpec(publicKeyBytes);
-                            PublicKey publicKey;
-                            publicKey = keyFactory.generatePublic(pubKeySpec);
+                            PublicKey publicKey = null;
+                            
+                            if (publicKeyType.equals("RSA")) {
+                                publicKey = keyFactoryRSA.generatePublic(pubKeySpec);
+                            } else if (publicKeyType.equals("EC")) {
+                                publicKey = keyFactoryEC.generatePublic(pubKeySpec);
+                            }
                             logger.debug("Adding public key for realm = " + realm);
                             DiameterFirewallConfig.destination_realm_encryption.put(realm, publicKey);
                         } catch (InvalidKeySpecException ex) {
@@ -1722,17 +1242,21 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
                 // ------------- Diameter verify --------------
                 if (DiameterFirewallConfig.origin_realm_verify.containsKey(orig_realm)) {
                     PublicKey publicKey = DiameterFirewallConfig.origin_realm_verify.get(orig_realm);
-                    String r = diameterVerify(msg, publicKey);
+                    String r = crypto.diameterVerify(msg, publicKey);
                     if (!r.equals("")) {
                         firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, r, lua_hmap);
                         return;
                     }
+                } 
+                // No key to verify signature
+                else {
+                    // TODO could initiate key autodiscovery
                 }
                 // --------------------------------------------
                 // ------------- Diameter signing -------------
                 if (DiameterFirewallConfig.origin_realm_signing.containsKey(orig_realm)) {
                     KeyPair keyPair = DiameterFirewallConfig.origin_realm_signing.get(orig_realm);
-                    diameterSign(msg, keyPair);
+                    crypto.diameterSign(msg, keyPair);
                 }
                 // --------------------------------------------
             }
@@ -1750,7 +1274,7 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
                 // encrypt
                 // diameterEncrypt(msg, publicKey);
                 // changed to v2 to use encrypted grouped AVP
-                diameterEncrypt_v2(msg, publicKey);
+                crypto.diameterEncrypt_v2(msg, publicKey);
             }
             // Answers without Dest-Realm, but seen previous Request
             else if (!msg.isRequest()
@@ -1765,7 +1289,7 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
                 // encrypt
                 // diameterEncrypt(msg, publicKey);
                 // changed to v2 to use encrypted grouped AVP
-                diameterEncrypt_v2(msg, publicKey);
+                crypto.diameterEncrypt_v2(msg, publicKey);
 
                 diameter_sessions.remove(session_id);
 
@@ -1807,7 +1331,7 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
                     // --------- Add also Diameter signature ------------
                     if (DiameterFirewallConfig.origin_realm_signing.containsKey(orig_realm)) {
                         KeyPair keyPair = DiameterFirewallConfig.origin_realm_signing.get(orig_realm);
-                        diameterSign(message, keyPair);
+                        crypto.diameterSign(message, keyPair);
                     }
                     // --------------------------------------------------
 
@@ -1987,235 +1511,5 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
         }
         
         return s;
-    }
-    
-    /**
-     * Method to split byte array 
-     * 
-     * @param bytes original byte array
-     * @param chunkSize chunk size
-     * @return two dimensional byte array
-     */
-    private byte[][] splitByteArray(byte[] bytes, int chunkSize) {
-        int len = bytes.length;
-        int counter = 0;
-
-        int size = ((bytes.length - 1) / chunkSize) + 1;
-        byte[][] newArray = new byte[size][]; 
-
-        for (int i = 0; i < len - chunkSize + 1; i += chunkSize) {
-            newArray[counter++] = Arrays.copyOfRange(bytes, i, i + chunkSize);
-        }
-
-        if (len % chunkSize != 0) {
-            newArray[counter] = Arrays.copyOfRange(bytes, len - len % chunkSize, len);
-        }
-        
-        return newArray;
-    }
-    
-    /**
-     * Concatenate two byte arrays
-     * 
-     * @param bytes first byte array
-     * @param chunkSize second byte array
-     * @return concatenated byte array
-     */
-    private byte[] concatByteArray(byte[] a, byte[] b) {
-        if (a == null) { 
-            return b;
-        }
-        if (b == null) {
-            return a;
-        }
-        
-        byte[] r = new byte[a.length + b.length];
-
-        System.arraycopy(a, 0, r, 0, a.length);
-
-        System.arraycopy(b, 0, r, a.length, b.length);
-        
-        return r;
-    }
-    
-    // workaround because in jDiameter AvpImpl, AvpSetImpl is not public
-    // TODO submit to jDiameter to make AvpImpl, AvpSetImpl public
-    private static final int INT32_SIZE = 4;
-    
-    public byte[] encodeAvp(Avp avp) {
-        try {
-            int payloadSize = avp.getRaw().length;
-            boolean hasVendorId = avp.getVendorId() != 0;
-            int origLength = payloadSize + 8 + (hasVendorId ? 4 : 0);
-            int tmp = payloadSize % 4;
-            int paddingSize = tmp > 0 ? (4 - tmp) : 0;
-
-            byte[] bCode = this.int32ToBytes(avp.getCode());
-            int flags = (byte) ((hasVendorId ? 0x80 : 0)
-                    | (avp.isMandatory() ? 0x40 : 0) | (avp.isEncrypted() ? 0x20 : 0));
-            byte[] bFlags = this.int32ToBytes(((flags << 24) & 0xFF000000) + origLength);
-            byte[] bVendor = hasVendorId ? int32ToBytes((int) avp.getVendorId()) : new byte[0];
-            return this.concat(origLength + paddingSize, bCode, bFlags, bVendor, avp.getRaw());
-        } catch (Exception e) {
-            logger.debug("Error during encode avp", e);
-            return new byte[0];
-        }
-    }
-    
-    
-    protected class DynamicByteArray {
-
-        private byte[] array;
-        private int size;
-
-        public DynamicByteArray(int cap) {
-          array = new byte[cap > 0 ? cap : 256];
-          size = 0;
-        }
-
-        public int get(int pos) {
-          if (pos >= size) {
-            throw new ArrayIndexOutOfBoundsException();
-          }
-          return array[pos];
-        }
-
-        public void add(byte[] bytes) {
-          if (size + bytes.length > array.length) {
-            byte[] newarray = new byte[array.length + bytes.length * 2];
-            System.arraycopy(array, 0, newarray, 0, size);
-            array = newarray;
-          }
-          System.arraycopy(bytes, 0, array, size, bytes.length);
-          size += bytes.length;
-        }
-
-        public byte[] getResult() {
-          return Arrays.copyOfRange(array, 0, size);
-        }
-    }
-    
-    public byte[] encodeAvpSet(AvpSet avps) {
-        //ByteArrayOutputStream out = new ByteArrayOutputStream();
-        DynamicByteArray dba = new DynamicByteArray(0);
-        try {
-          //DataOutputStream data = new DataOutputStream(out);
-          for (Avp a : avps) {
-            /*if (a instanceof AvpImpl) {
-              AvpImpl aImpl = (AvpImpl) a;
-              if (aImpl.rawData.length == 0 && aImpl.groupedData != null) {
-                aImpl.rawData = encodeAvpSet(a.getGrouped());
-              }
-              //data.write(newEncodeAvp(aImpl));
-              dba.add(encodeAvp(aImpl));
-            }*/
-            
-            // workaround because of AvpImpl is not public
-            boolean hasVendorId = a.getVendorId() != 0;
-            int flags = (byte) ((hasVendorId ? 0x80 : 0)
-                    | (a.isMandatory() ? 0x40 : 0) | (a.isEncrypted() ? 0x20 : 0));
-            AvpImpl aImpl = new AvpImpl(a.getCode(), flags, a.getVendorId(), a.getRawData());
-            if (aImpl.rawData.length == 0 && aImpl.groupedData != null) {
-              aImpl.rawData = encodeAvpSet(a.getGrouped());
-            }
-            dba.add(encodeAvp(aImpl));
-          }
-        }
-        catch (Exception e) {
-          e.printStackTrace();
-          logger.debug("Error during encode avps", e);
-        }
-        return dba.getResult();
-    }
-    
-    public byte[] int32ToBytes(int value) {
-        byte[] bytes = new byte[INT32_SIZE];
-        bytes[0] = (byte) (value >> 24 & 0xFF);
-        bytes[1] = (byte) (value >> 16 & 0xFF);
-        bytes[2] = (byte) (value >> 8 & 0xFF);
-        bytes[3] = (byte) (value >> 0 & 0xFF);
-        return bytes;
-    }
-    
-    private byte[] concat(int length, byte[]... arrays) {
-        if (length == 0) {
-            for (byte[] array : arrays) {
-                length += array.length;
-            }
-        }
-        byte[] result = new byte[length];
-        int pos = 0;
-        for (byte[] array : arrays) {
-            System.arraycopy(array, 0, result, pos, array.length);
-            pos += array.length;
-        }
-        return result;
-    }
-    
-    private Avp decodeAvp(byte[] in_b ) throws IOException, AvpDataException {
-        DataInputStream in = new DataInputStream(new ByteArrayInputStream(in_b));
-        int code = in.readInt();
-        int tmp = in.readInt();
-        int counter = 0;
-        
-        int flags = (tmp >> 24) & 0xFF;
-        int length = tmp & 0xFFFFFF;
-        if (length < 0 || counter + length > in_b.length) {
-            throw new AvpDataException("Not enough data in buffer!");
-        }
-        long vendor = 0;
-        boolean hasVendor = false;
-        if ((flags & 0x80) != 0) {
-            vendor = in.readInt();
-            hasVendor = true;
-        }
-        // Determine body L = length - 4(code) -1(flags) -3(length) [-4(vendor)]
-        byte[] rawData = new byte[length - (8 + (hasVendor ? 4 : 0))];
-        in.read(rawData);
-        // skip remaining.
-        // TODO: Do we need to padd everything? Or on send stack should properly fill byte[] ... ?
-        if (length % 4 != 0) {
-            for (int i; length % 4 != 0; length += i) {
-                i = (int) in.skip((4 - length % 4));
-            }
-        }
-        AvpImpl avp = new AvpImpl(code, (short) flags, (int) vendor, rawData);
-        return avp;
-    }
-    
-    private AvpSetImpl decodeAvpSet(byte[] buffer, int shift) throws IOException, AvpDataException {
-        AvpSetImpl avps = new AvpSetImpl();
-        int tmp, counter = shift;
-        DataInputStream in = new DataInputStream(new ByteArrayInputStream(buffer, shift, buffer.length /* - shift ? */));
-
-        while (counter < buffer.length) {
-          int code = in.readInt();
-          tmp = in.readInt();
-          int flags = (tmp >> 24) & 0xFF;
-          int length  = tmp & 0xFFFFFF;
-          if (length < 0 || counter + length > buffer.length) {
-            throw new AvpDataException("Not enough data in buffer!");
-          }
-          long vendor = 0;
-          boolean hasVendor = false;
-          if ((flags & 0x80) != 0) {
-            vendor = in.readInt();
-            hasVendor = true;
-          }
-          // Determine body L = length - 4(code) -1(flags) -3(length) [-4(vendor)]
-          byte[] rawData = new byte[length - (8 + (hasVendor ? 4 : 0))];
-          in.read(rawData);
-          // skip remaining.
-          // TODO: Do we need to padd everything? Or on send stack should properly fill byte[] ... ?
-          if (length % 4 != 0) {
-            for (int i; length % 4 != 0; length += i) {
-              i = (int) in.skip((4 - length % 4));
-            }
-          }
-          AvpImpl avp = new AvpImpl(code, (short) flags, (int) vendor, rawData);
-          avps.addAvp(avp);
-          counter += length;
-        }
-        return avps;
     }
 }

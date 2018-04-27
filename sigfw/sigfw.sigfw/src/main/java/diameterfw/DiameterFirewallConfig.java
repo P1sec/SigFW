@@ -36,6 +36,7 @@ import java.io.IOException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.Signature;
@@ -93,10 +94,14 @@ public class DiameterFirewallConfig {
     public static int honeypot_dnat_session_expiration_timeout = 15;
     public static String mthreat_salt = "";
     
-    // Encryption
-    public static KeyFactory keyFactory;
-    public static Cipher cipher;
-    public static Signature signature;
+    // Encryption RSA
+    public static KeyFactory keyFactoryRSA;
+    public static Cipher cipherRSA;
+    public static Signature signatureRSA;
+    // Encryption EC
+    public static KeyFactory keyFactoryEC;
+    public static Cipher cipherAES_GCM;
+    public static Signature signatureECDSA;
     
     public static <T extends Object> T get(String jp) {
         return jsonConf.read(jp);
@@ -186,14 +191,27 @@ public class DiameterFirewallConfig {
      */
     public static void loadConfigFromFile(String filename) throws FileNotFoundException, IOException, ParseException {
         
-        // Encryption
+        // Encryption RSA
         try {
-            keyFactory = KeyFactory.getInstance("RSA");
-            cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-            signature = Signature.getInstance("SHA256WithRSA");
+            keyFactoryRSA = KeyFactory.getInstance("RSA");
+            cipherRSA = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+            signatureRSA = Signature.getInstance("SHA256WithRSA");
         } catch (NoSuchAlgorithmException ex) {
             Logger.getLogger(DiameterFirewallConfig.class.getName()).log(Level.SEVERE, null, ex);
         } catch (NoSuchPaddingException ex) {
+            Logger.getLogger(DiameterFirewallConfig.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+        // Encryption EC
+        try {
+            keyFactoryEC = KeyFactory.getInstance("EC");
+            cipherAES_GCM = Cipher.getInstance("AES/GCM/NoPadding", "SunJCE");
+            signatureECDSA = Signature.getInstance("SHA256withECDSA");
+        } catch (NoSuchAlgorithmException ex) {
+            Logger.getLogger(DiameterFirewallConfig.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchPaddingException ex) {
+            Logger.getLogger(DiameterFirewallConfig.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchProviderException ex) {
             Logger.getLogger(DiameterFirewallConfig.class.getName()).log(Level.SEVERE, null, ex);
         }
         
@@ -277,12 +295,20 @@ public class DiameterFirewallConfig {
         try {
             List<Map<String, Object>> _destination_realm_encryption = DiameterFirewallConfig.get("$.sigfw_configuration.encryption_rules.destination_realm_encryption");
             for (int i = 0; i < _destination_realm_encryption.size(); i++) {
-                String called_gt = (String)_destination_realm_encryption.get(i).get("destination_realm");
-                if (called_gt != null) {
+                String destination_realm = (String)_destination_realm_encryption.get(i).get("destination_realm");
+                if (destination_realm != null) {
+                    
+                    PublicKey publicKey = null;
                     byte[] publicKeyBytes =  Base64.getDecoder().decode((String)_destination_realm_encryption.get(i).get("public_key"));
+                    String publicKeyType = (String)_destination_realm_encryption.get(i).get("public_key_type");
                     X509EncodedKeySpec pubKeySpec = new X509EncodedKeySpec(publicKeyBytes);
-                    PublicKey publicKey = keyFactory.generatePublic(pubKeySpec);
-                    destination_realm_encryption.put(called_gt, publicKey);
+                    
+                    if (publicKeyType.equals("RSA")) {
+                        publicKey = keyFactoryRSA.generatePublic(pubKeySpec);
+                    } else if (publicKeyType.equals("EC")) {
+                        publicKey = keyFactoryEC.generatePublic(pubKeySpec);
+                    }
+                    destination_realm_encryption.put(destination_realm, publicKey);
                 }
             }
         } catch (InvalidKeySpecException ex) {
@@ -292,18 +318,33 @@ public class DiameterFirewallConfig {
         try {
             List<Map<String, Object>> _destination_realm_decryption = DiameterFirewallConfig.get("$.sigfw_configuration.encryption_rules.destination_realm_decryption");
             for (int i = 0; i < _destination_realm_decryption.size(); i++) {
-                String called_gt = (String)_destination_realm_decryption.get(i).get("destination_realm");
-                if (called_gt != null) {
-                    byte[] privateKeyBytes =  Base64.getDecoder().decode((String)_destination_realm_decryption.get(i).get("private_key"));
-                    PKCS8EncodedKeySpec privKeySpec = new PKCS8EncodedKeySpec(privateKeyBytes);
-                    PrivateKey privateKey = keyFactory.generatePrivate(privKeySpec);
+                String destination_realm = (String)_destination_realm_decryption.get(i).get("destination_realm");
+                if (destination_realm != null) {
                     
+                    PrivateKey privateKey = null;
+                    byte[] privateKeyBytes =  Base64.getDecoder().decode((String)_destination_realm_decryption.get(i).get("private_key"));
+                    String privateKeyType = (String)_destination_realm_decryption.get(i).get("private_key_type");
+                    PKCS8EncodedKeySpec privKeySpec = new PKCS8EncodedKeySpec(privateKeyBytes);
+                    
+                    if (privateKeyType.equals("RSA")) {
+                        privateKey = keyFactoryRSA.generatePrivate(privKeySpec);
+                    } else if (privateKeyType.equals("EC")) {
+                        privateKey = keyFactoryEC.generatePrivate(privKeySpec);
+                    }
+                    
+                    PublicKey publicKey = null;
                     byte[] publicKeyBytes =  Base64.getDecoder().decode((String)_destination_realm_decryption.get(i).get("public_key"));
+                    String publicKeyType = (String)_destination_realm_decryption.get(i).get("public_key_type");
                     X509EncodedKeySpec pubKeySpec = new X509EncodedKeySpec(publicKeyBytes);
-                    PublicKey publicKey = keyFactory.generatePublic(pubKeySpec);
+                    
+                    if (publicKeyType.equals("RSA")) {
+                        publicKey = keyFactoryRSA.generatePublic(pubKeySpec);
+                    } else if (publicKeyType.equals("EC")) {
+                        publicKey = keyFactoryEC.generatePublic(pubKeySpec);
+                    }
                     
                     KeyPair keypair = new KeyPair(publicKey, privateKey);
-                    destination_realm_decryption.put(called_gt, keypair);
+                    destination_realm_decryption.put(destination_realm, keypair);
                 }
             }
         } catch (InvalidKeySpecException ex) {
@@ -317,14 +358,22 @@ public class DiameterFirewallConfig {
         // Signing
         origin_realm_verify = new ConcurrentSkipListMap<String, PublicKey>();
         try {
-            List<Map<String, Object>> _calling_gt_verify = DiameterFirewallConfig.get("$.sigfw_configuration.signature_rules.origin_realm_verify");
-            for (int i = 0; i < _calling_gt_verify.size(); i++) {
-                String calling_gt = (String)_calling_gt_verify.get(i).get("origin_realm");
-                if (calling_gt != null) {
-                    byte[] publicKeyBytes =  Base64.getDecoder().decode((String)_calling_gt_verify.get(i).get("public_key"));
+            List<Map<String, Object>> _origin_realm_verify = DiameterFirewallConfig.get("$.sigfw_configuration.signature_rules.origin_realm_verify");
+            for (int i = 0; i < _origin_realm_verify.size(); i++) {
+                String origin_realm = (String)_origin_realm_verify.get(i).get("origin_realm");
+                if (origin_realm != null) {
+                    
+                    PublicKey publicKey = null;
+                    byte[] publicKeyBytes =  Base64.getDecoder().decode((String)_origin_realm_verify.get(i).get("public_key"));
+                    String publicKeyType = (String)_origin_realm_verify.get(i).get("public_key_type");
                     X509EncodedKeySpec pubKeySpec = new X509EncodedKeySpec(publicKeyBytes);
-                    PublicKey publicKey = keyFactory.generatePublic(pubKeySpec);
-                    origin_realm_verify.put(calling_gt, publicKey);
+                    
+                    if (publicKeyType.equals("RSA")) {
+                        publicKey = keyFactoryRSA.generatePublic(pubKeySpec);
+                    } else if (publicKeyType.equals("EC")) {
+                        publicKey = keyFactoryEC.generatePublic(pubKeySpec);
+                    }
+                    origin_realm_verify.put(origin_realm, publicKey);
                 }
             }
         } catch (InvalidKeySpecException ex) {
@@ -334,18 +383,33 @@ public class DiameterFirewallConfig {
         try {
             List<Map<String, Object>> _origin_realm_signing = DiameterFirewallConfig.get("$.sigfw_configuration.signature_rules.origin_realm_signing");
             for (int i = 0; i < _origin_realm_signing.size(); i++) {
-                String calling_gt = (String)_origin_realm_signing.get(i).get("origin_realm");
-                if (calling_gt != null) {
-                    byte[] privateKeyBytes =  Base64.getDecoder().decode((String)_origin_realm_signing.get(i).get("private_key"));
-                    PKCS8EncodedKeySpec privKeySpec = new PKCS8EncodedKeySpec(privateKeyBytes);
-                    PrivateKey privateKey = keyFactory.generatePrivate(privKeySpec);
+                String origin_realm = (String)_origin_realm_signing.get(i).get("origin_realm");
+                if (origin_realm != null) {
                     
+                    PrivateKey privateKey = null;
+                    byte[] privateKeyBytes =  Base64.getDecoder().decode((String)_origin_realm_signing.get(i).get("private_key"));
+                    String privateKeyType = (String)_origin_realm_signing.get(i).get("private_key_type");
+                    PKCS8EncodedKeySpec privKeySpec = new PKCS8EncodedKeySpec(privateKeyBytes);
+                    
+                    if (privateKeyType.equals("RSA")) {
+                        privateKey = keyFactoryRSA.generatePrivate(privKeySpec);
+                    } else if (privateKeyType.equals("EC")) {
+                        privateKey = keyFactoryEC.generatePrivate(privKeySpec);
+                    }
+                    
+                    PublicKey publicKey = null;
                     byte[] publicKeyBytes =  Base64.getDecoder().decode((String)_origin_realm_signing.get(i).get("public_key"));
+                    String publicKeyType = (String)_origin_realm_signing.get(i).get("public_key_type");
                     X509EncodedKeySpec pubKeySpec = new X509EncodedKeySpec(publicKeyBytes);
-                    PublicKey publicKey = keyFactory.generatePublic(pubKeySpec);
+                    
+                    if (publicKeyType.equals("RSA")) {
+                        publicKey = keyFactoryRSA.generatePublic(pubKeySpec);
+                    } else if (publicKeyType.equals("EC")) {
+                        publicKey = keyFactoryEC.generatePublic(pubKeySpec);
+                    }
                     
                     KeyPair keypair = new KeyPair(publicKey, privateKey);
-                    origin_realm_signing.put(calling_gt, keypair);
+                    origin_realm_signing.put(origin_realm, keypair);
                 }
             }
         } catch (InvalidKeySpecException ex) {

@@ -21,7 +21,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  */
-package ss7fw.tests;
+package sigfw.tests;
 
 
 import java.security.SecureRandom;

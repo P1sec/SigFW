@@ -28,6 +28,14 @@ import com.google.gson.GsonBuilder;
 import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.PathNotFoundException;
 import com.jayway.jsonpath.ReadContext;
+import diameterfw.DiameterFirewallConfig;
+import static diameterfw.DiameterFirewallConfig.cipherAES_GCM;
+import static diameterfw.DiameterFirewallConfig.cipherRSA;
+import static diameterfw.DiameterFirewallConfig.destination_realm_encryption;
+import static diameterfw.DiameterFirewallConfig.keyFactoryEC;
+import static diameterfw.DiameterFirewallConfig.keyFactoryRSA;
+import static diameterfw.DiameterFirewallConfig.signatureECDSA;
+import static diameterfw.DiameterFirewallConfig.signatureRSA;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
@@ -36,6 +44,7 @@ import java.io.IOException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.Signature;
@@ -97,10 +106,14 @@ public class SS7FirewallConfig {
     public static String mthreat_salt = "";
     
     
-    // Encryption
-    public static KeyFactory keyFactory;
-    public static Cipher cipher;
-    public static Signature signature;
+    // Encryption RSA
+    public static KeyFactory keyFactoryRSA;
+    public static Cipher cipherRSA;
+    public static Signature signatureRSA;
+    // Encryption EC
+    public static KeyFactory keyFactoryEC;
+    public static Cipher cipherAES_GCM;
+    public static Signature signatureECDSA;
     
     public static <T extends Object> T get(String jp) {
         return jsonConf.read(jp);
@@ -217,15 +230,28 @@ public class SS7FirewallConfig {
      */
     public static void loadConfigFromFile(String filename) throws FileNotFoundException, IOException, ParseException {
         
-        // Encryption
+        // Encryption RSA
         try {
-            keyFactory = KeyFactory.getInstance("RSA");
-            cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-            signature = Signature.getInstance("SHA256WithRSA");
+            keyFactoryRSA = KeyFactory.getInstance("RSA");
+            cipherRSA = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+            signatureRSA = Signature.getInstance("SHA256WithRSA");
         } catch (NoSuchAlgorithmException ex) {
             Logger.getLogger(SS7FirewallConfig.class.getName()).log(Level.SEVERE, null, ex);
         } catch (NoSuchPaddingException ex) {
             Logger.getLogger(SS7FirewallConfig.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+        // Encryption EC
+        try {
+            keyFactoryEC = KeyFactory.getInstance("EC");
+            cipherAES_GCM = Cipher.getInstance("AES/GCM/NoPadding", "SunJCE");
+            signatureECDSA = Signature.getInstance("SHA256withECDSA");
+        } catch (NoSuchAlgorithmException ex) {
+            Logger.getLogger(DiameterFirewallConfig.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchPaddingException ex) {
+            Logger.getLogger(DiameterFirewallConfig.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchProviderException ex) {
+            Logger.getLogger(DiameterFirewallConfig.class.getName()).log(Level.SEVERE, null, ex);
         }
                 
         
@@ -320,9 +346,17 @@ public class SS7FirewallConfig {
             for (int i = 0; i < _called_gt_encryption.size(); i++) {
                 String called_gt = (String)_called_gt_encryption.get(i).get("called_gt");
                 if (called_gt != null) {
+                    
+                    PublicKey publicKey = null;
                     byte[] publicKeyBytes =  Base64.getDecoder().decode((String)_called_gt_encryption.get(i).get("public_key"));
+                    String publicKeyType = (String)_called_gt_encryption.get(i).get("public_key_type");
                     X509EncodedKeySpec pubKeySpec = new X509EncodedKeySpec(publicKeyBytes);
-                    PublicKey publicKey = keyFactory.generatePublic(pubKeySpec);
+                    
+                    if (publicKeyType.equals("RSA")) {
+                        publicKey = keyFactoryRSA.generatePublic(pubKeySpec);
+                    } else if (publicKeyType.equals("EC")) {
+                        publicKey = keyFactoryEC.generatePublic(pubKeySpec);
+                    }
                     called_gt_encryption.put(called_gt, publicKey);
                 }
             }
@@ -335,13 +369,28 @@ public class SS7FirewallConfig {
             for (int i = 0; i < _called_gt_decryption.size(); i++) {
                 String called_gt = (String)_called_gt_decryption.get(i).get("called_gt");
                 if (called_gt != null) {
-                    byte[] privateKeyBytes =  Base64.getDecoder().decode((String)_called_gt_decryption.get(i).get("private_key"));
-                    PKCS8EncodedKeySpec privKeySpec = new PKCS8EncodedKeySpec(privateKeyBytes);
-                    PrivateKey privateKey = keyFactory.generatePrivate(privKeySpec);
                     
+                    PrivateKey privateKey = null;
+                    byte[] privateKeyBytes =  Base64.getDecoder().decode((String)_called_gt_decryption.get(i).get("private_key"));
+                    String privateKeyType = (String)_called_gt_decryption.get(i).get("private_key_type");
+                    PKCS8EncodedKeySpec privKeySpec = new PKCS8EncodedKeySpec(privateKeyBytes);
+                    
+                    if (privateKeyType.equals("RSA")) {
+                        privateKey = keyFactoryRSA.generatePrivate(privKeySpec);
+                    } else if (privateKeyType.equals("EC")) {
+                        privateKey = keyFactoryEC.generatePrivate(privKeySpec);
+                    }
+                    
+                    PublicKey publicKey = null;
                     byte[] publicKeyBytes =  Base64.getDecoder().decode((String)_called_gt_decryption.get(i).get("public_key"));
+                    String publicKeyType = (String)_called_gt_decryption.get(i).get("public_key_type");
                     X509EncodedKeySpec pubKeySpec = new X509EncodedKeySpec(publicKeyBytes);
-                    PublicKey publicKey = keyFactory.generatePublic(pubKeySpec);
+                    
+                    if (publicKeyType.equals("RSA")) {
+                        publicKey = keyFactoryRSA.generatePublic(pubKeySpec);
+                    } else if (publicKeyType.equals("EC")) {
+                        publicKey = keyFactoryEC.generatePublic(pubKeySpec);
+                    }
                     
                     KeyPair keypair = new KeyPair(publicKey, privateKey);
                     called_gt_decryption.put(called_gt, keypair);
@@ -362,9 +411,17 @@ public class SS7FirewallConfig {
             for (int i = 0; i < _calling_gt_verify.size(); i++) {
                 String calling_gt = (String)_calling_gt_verify.get(i).get("calling_gt");
                 if (calling_gt != null) {
+                    
+                    PublicKey publicKey = null;
                     byte[] publicKeyBytes =  Base64.getDecoder().decode((String)_calling_gt_verify.get(i).get("public_key"));
+                    String publicKeyType = (String)_calling_gt_verify.get(i).get("public_key_type");
                     X509EncodedKeySpec pubKeySpec = new X509EncodedKeySpec(publicKeyBytes);
-                    PublicKey publicKey = keyFactory.generatePublic(pubKeySpec);
+                    
+                    if (publicKeyType.equals("RSA")) {
+                        publicKey = keyFactoryRSA.generatePublic(pubKeySpec);
+                    } else if (publicKeyType.equals("EC")) {
+                        publicKey = keyFactoryEC.generatePublic(pubKeySpec);
+                    }
                     calling_gt_verify.put(calling_gt, publicKey);
                 }
             }
@@ -377,13 +434,28 @@ public class SS7FirewallConfig {
             for (int i = 0; i < _calling_gt_signing.size(); i++) {
                 String calling_gt = (String)_calling_gt_signing.get(i).get("calling_gt");
                 if (calling_gt != null) {
-                    byte[] privateKeyBytes =  Base64.getDecoder().decode((String)_calling_gt_signing.get(i).get("private_key"));
-                    PKCS8EncodedKeySpec privKeySpec = new PKCS8EncodedKeySpec(privateKeyBytes);
-                    PrivateKey privateKey = keyFactory.generatePrivate(privKeySpec);
                     
+                    PrivateKey privateKey = null;
+                    byte[] privateKeyBytes =  Base64.getDecoder().decode((String)_calling_gt_signing.get(i).get("private_key"));
+                    String privateKeyType = (String)_calling_gt_signing.get(i).get("private_key_type");
+                    PKCS8EncodedKeySpec privKeySpec = new PKCS8EncodedKeySpec(privateKeyBytes);
+                    
+                    if (privateKeyType.equals("RSA")) {
+                        privateKey = keyFactoryRSA.generatePrivate(privKeySpec);
+                    } else if (privateKeyType.equals("EC")) {
+                        privateKey = keyFactoryEC.generatePrivate(privKeySpec);
+                    }
+                    
+                    PublicKey publicKey = null;
                     byte[] publicKeyBytes =  Base64.getDecoder().decode((String)_calling_gt_signing.get(i).get("public_key"));
+                    String publicKeyType = (String)_calling_gt_signing.get(i).get("public_key_type");
                     X509EncodedKeySpec pubKeySpec = new X509EncodedKeySpec(publicKeyBytes);
-                    PublicKey publicKey = keyFactory.generatePublic(pubKeySpec);
+                    
+                    if (publicKeyType.equals("RSA")) {
+                        publicKey = keyFactoryRSA.generatePublic(pubKeySpec);
+                    } else if (publicKeyType.equals("EC")) {
+                        publicKey = keyFactoryEC.generatePublic(pubKeySpec);
+                    }
                     
                     KeyPair keypair = new KeyPair(publicKey, privateKey);
                     calling_gt_signing.put(calling_gt, keypair);

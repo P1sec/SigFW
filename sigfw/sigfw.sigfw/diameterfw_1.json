@@ -104,13 +104,16 @@
 			"destination_realm_encryption": [
 				{
 					"destination_realm": "###exchange.example.org",
+					"public_key_type": "RSA",
 					"public_key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCm/PAsXOj7cjirJsQsiIeHauFNLwBIuM1brkUm3aVXeraDIeJ2BWXmWlKMmX/FRZh4Qhe9mUy6YgwTO8PndWdMDRWMw8vvXJFI7HPJpsNfcBykefSqhr5X4h6HyQr73V8O0U5PtgCBuVoyuOFIj87WFwaLuajHiQgps7NOloeH1wIDAQAB"
 				}
 			],
 			"destination_realm_decryption": [
 				{
 					"destination_realm": "exchangeClient.example.org",
+					"public_key_type": "RSA",
 					"public_key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCm/PAsXOj7cjirJsQsiIeHauFNLwBIuM1brkUm3aVXeraDIeJ2BWXmWlKMmX/FRZh4Qhe9mUy6YgwTO8PndWdMDRWMw8vvXJFI7HPJpsNfcBykefSqhr5X4h6HyQr73V8O0U5PtgCBuVoyuOFIj87WFwaLuajHiQgps7NOloeH1wIDAQAB",
+					"private_key_type": "RSA",
 					"private_key": "MIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBAKb88Cxc6PtyOKsmxCyIh4dq4U0vAEi4zVuuRSbdpVd6toMh4nYFZeZaUoyZf8VFmHhCF72ZTLpiDBM7w+d1Z0wNFYzDy+9ckUjsc8mmw19wHKR59KqGvlfiHofJCvvdXw7RTk+2AIG5WjK44UiPztYXBou5qMeJCCmzs06Wh4fXAgMBAAECgYBwNrkOlsDZd8AtAzgA1R5+GYydWWBPfiBB47IElB1v076iEDsmJCp9yWR/pwb9ge8boQ5jEolFFm4W3qqe934ZvBkJaL38zqI3rjZJJ7c9uJwr3ldmREFZa5U8l9tnvlck1b9QW0KDvjt+1Q547+eFlgQaqY5QfY+9D3rpdkZYwQJBAO/2PyNrYlHmVGZOt6foJLv3w4uMkTuleVH9Qu9TOQiv5wyCPTmMDMzW3AwPlFNaZI6YqqYYPUpyI1T0vWVpfS0CQQCyJhtwb5Xxg+b9NGuGmMqJ9GVzYwDPufhMDp7CDDaRKwV3q7eOtsasEGZX64ZkuVRL9xssKLunoqiT5c9z5aOTAkEApf060692hZzEiTiuhjFpJ7VNyPxlglMGxxZf9NkmvMGhG+ADpgkg2ZlPAfDM85O1t4YXlWlzDEpD8oKReNMtyQJAQZN9bjnk++4NzQ7KtdTwWS+5WGwNFGnkWDrZfZx5SZ6IeLCg9Mua/iNbSOnNoq4FtaDUQ8EKsn5Rh3+EiajyOQJAB/dZABQVKyvDAN4s3rXWsrGSuMzGoNCBf1Min1cnWhW2ndE7XC9szNsDGn7sCXmpjwdb7SA6iuh7yrH0YAiOgQ=="
 				}
 			],
@@ -120,13 +123,16 @@
 			"origin_realm_verify": [
 				{
 					"origin_realm": "exchange.example.org",
+					"public_key_type": "RSA",
 					"public_key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCm/PAsXOj7cjirJsQsiIeHauFNLwBIuM1brkUm3aVXeraDIeJ2BWXmWlKMmX/FRZh4Qhe9mUy6YgwTO8PndWdMDRWMw8vvXJFI7HPJpsNfcBykefSqhr5X4h6HyQr73V8O0U5PtgCBuVoyuOFIj87WFwaLuajHiQgps7NOloeH1wIDAQAB"
 				}
 			],
 			"origin_realm_signing": [
 				{
 					"origin_realm": "exchangeClient.example.org",
+					"public_key_type": "RSA",
 					"public_key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCm/PAsXOj7cjirJsQsiIeHauFNLwBIuM1brkUm3aVXeraDIeJ2BWXmWlKMmX/FRZh4Qhe9mUy6YgwTO8PndWdMDRWMw8vvXJFI7HPJpsNfcBykefSqhr5X4h6HyQr73V8O0U5PtgCBuVoyuOFIj87WFwaLuajHiQgps7NOloeH1wIDAQAB",
+					"private_key_type": "RSA",
 					"private_key": "MIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBAKb88Cxc6PtyOKsmxCyIh4dq4U0vAEi4zVuuRSbdpVd6toMh4nYFZeZaUoyZf8VFmHhCF72ZTLpiDBM7w+d1Z0wNFYzDy+9ckUjsc8mmw19wHKR59KqGvlfiHofJCvvdXw7RTk+2AIG5WjK44UiPztYXBou5qMeJCCmzs06Wh4fXAgMBAAECgYBwNrkOlsDZd8AtAzgA1R5+GYydWWBPfiBB47IElB1v076iEDsmJCp9yWR/pwb9ge8boQ5jEolFFm4W3qqe934ZvBkJaL38zqI3rjZJJ7c9uJwr3ldmREFZa5U8l9tnvlck1b9QW0KDvjt+1Q547+eFlgQaqY5QfY+9D3rpdkZYwQJBAO/2PyNrYlHmVGZOt6foJLv3w4uMkTuleVH9Qu9TOQiv5wyCPTmMDMzW3AwPlFNaZI6YqqYYPUpyI1T0vWVpfS0CQQCyJhtwb5Xxg+b9NGuGmMqJ9GVzYwDPufhMDp7CDDaRKwV3q7eOtsasEGZX64ZkuVRL9xssKLunoqiT5c9z5aOTAkEApf060692hZzEiTiuhjFpJ7VNyPxlglMGxxZf9NkmvMGhG+ADpgkg2ZlPAfDM85O1t4YXlWlzDEpD8oKReNMtyQJAQZN9bjnk++4NzQ7KtdTwWS+5WGwNFGnkWDrZfZx5SZ6IeLCg9Mua/iNbSOnNoq4FtaDUQ8EKsn5Rh3+EiajyOQJAB/dZABQVKyvDAN4s3rXWsrGSuMzGoNCBf1Min1cnWhW2ndE7XC9szNsDGn7sCXmpjwdb7SA6iuh7yrH0YAiOgQ=="
 				}
 			]

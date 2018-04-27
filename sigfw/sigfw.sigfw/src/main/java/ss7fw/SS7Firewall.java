@@ -23,11 +23,15 @@
  */
 package ss7fw;
 
+import com.p1sec.sigfw.SigFW_interface.CryptoInterface;
+import sigfw.common.ExternalFirewallRules;
 import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.KeyPair;
@@ -291,14 +295,18 @@ import org.mobicents.protocols.ss7.tcap.asn.comp.OperationCode;
 import org.mobicents.protocols.ss7.tcap.asn.comp.ReturnResultLast;
 import static ss7fw.SS7FirewallConfig.called_gt_encryption;
 import static ss7fw.SS7FirewallConfig.firewallPolicy;
-import static ss7fw.SS7FirewallConfig.keyFactory;
+import static ss7fw.SS7FirewallConfig.keyFactoryRSA;
+import static ss7fw.SS7FirewallConfig.keyFactoryEC;
 import sigfw.connectorIDS.ConnectorIDS;
 import sigfw.connectorIDS.ConnectorIDSModuleRest;
 import sigfw.connectorMThreat.ConnectorMThreat;
 import sigfw.connectorMThreat.ConnectorMThreatModuleRest;
-//import org.mobicents.protocols.ss7.mtp.Mtp3EndCongestionPrimitive;
-//import org.mobicents.protocols.ss7.sccp.NetworkIdState;
-
+import com.p1sec.sigfw.SigFW_interface.FirewallRulesInterface;
+import java.security.interfaces.ECPublicKey;
+import javafx.util.Pair;
+import sigfw.common.Crypto;
+import static sigfw.common.Utils.concatByteArray;
+import static sigfw.common.Utils.splitByteArray;
 /**
  * Main SS7Firewall class. Class contains mainly static variables used to build the SS7 stacks.
  * 
@@ -352,6 +360,12 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
     static ConcurrentLinkedDeque<String> mThreat_alerts = new ConcurrentLinkedDeque<String>();
     private static ConnectorMThreat connectorMThreat = null;
     
+    // Externel Firewall Rules
+    FirewallRulesInterface externalFirewallRules = new ExternalFirewallRules();
+    
+    // Crypto Module
+    CryptoInterface crypto = new Crypto();
+    
     // Honeypot GT NAT
     // Session Key: Original_calling_GT:Original_called_GT (from Invoke)
     // Value: Original_called_GT:Original_dest_SSN
@@ -366,12 +380,8 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
                                                 .expiration(60, TimeUnit.SECONDS)
                                                 .build();
     
-    // TCAP signature and decryption time window used for TVP
-    private final static long tcap_tvp_time_window = 30;  // in seconds
-    
     static Random randomGenerator = new Random();
     
-    static final private Long OC_SIGNATURE = 100L;
     static final private Long OC_AUTO_ENCRYPTION = 99L;
     
     /**
@@ -701,6 +711,32 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
      */
     public void initializeStack(IpChannelType ipChannelType) throws Exception {
         
+        // Initialize SigFW Extensions
+        try {
+            logger.info("Trying to load SigFW extensions from: " + "file://" + System.getProperty("user.dir")  + "/src/main/resources/SigFW_extension-1.0.jar");
+            
+            // Constructing a URL form the path to JAR
+            URL u = new URL("file://" + System.getProperty("user.dir")  + "/src/main/resources/SigFW_extension-1.0.jar");
+            
+            // Creating an instance of URLClassloader using the above URL and parent classloader 
+            ClassLoader loader  = URLClassLoader.newInstance(new URL[]{u}, ExternalFirewallRules.class.getClassLoader());
+
+            // Returns the class object
+            Class<?> mainClass = Class.forName("com.p1sec.sigfw.SigFW_extension.rules.ExtendedFirewallRules", true, loader);
+            externalFirewallRules = (FirewallRulesInterface) mainClass.getDeclaredConstructor().newInstance();
+            
+            // Returns the class object
+            Class<?> mainClassCrypto = Class.forName("com.p1sec.sigfw.SigFW_extension.crypto.ExtendedCrypto", true, loader);
+            crypto = (CryptoInterface) mainClassCrypto.getDeclaredConstructor().newInstance();
+
+            
+            logger.info("Sucessfully loaded SigFW extensions ....");
+        
+        } catch (Exception e) {
+            logger.info("Failed to load SigFW extensions: " + e.toString());
+        }
+        // End of SigFW Extensions
+        
         if (SS7FirewallConfig.firewallPolicy == SS7FirewallConfig.FirewallPolicy.DNAT_TO_HONEYPOT) {
             dnat_sessions = ExpiringMap.builder()
                                                 .expiration(SS7FirewallConfig.honeypot_dnat_session_expiration_timeout, TimeUnit.SECONDS)
@@ -932,267 +968,6 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
     }
     
     /**
-     * Method remove from SCCP message duplicated TCAP signatures and verifies the TCAP signature.
-     * Method currently is designed only for TCAP begin messages.
-     * 
-     * 
-     * @param message SCCP message
-     * @param tcb TCAP Begin Message
-     * @param comps TCAP Components
-     * @return -1 no public key to verify signature, 0 signature does not match, 1 signature ok
-     */
-    int tcapVerify(SccpDataMessage message, TCBeginMessage tcb, Component[] comps) {
-        // --------------- TCAP verify  ---------------
-        int signature_ok = -1;  // no key
-        PublicKey publicKey = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.calling_gt_verify, message.getCallingPartyAddress().getGlobalTitle().getDigits());
-        if (publicKey != null) {
-
-            signature_ok = 0;
-
-            List<Integer> signed_index = new ArrayList<Integer>();
-            for (int i = 0; i < comps.length; i++) {
-                // find all signature components
-                if (comps[i].getType() == ComponentType.Invoke) {
-                    Invoke inv = (Invoke) comps[i];
-                    if (inv.getOperationCode().getLocalOperationCode() == OC_SIGNATURE) {
-                        signed_index.add(i);
-                    }
-                }
-            }
-            if (signed_index.size() > 0) {
-                // read signature component
-                InvokeImpl invSignature = (InvokeImpl)comps[signed_index.get(0)];
-                Parameter p = invSignature.getParameter();
-                Parameter[] pa;
-                
-                // Signature
-                byte[] signatureBytes = null;
-                long t_tvp = 0;
-                 
-                if (p != null && p.getTagClass() == Tag.CLASS_UNIVERSAL) {
-                    pa = p.getParameters();
-
-
-                    // Reserved (currently not used) - Signature Version
-                    // TODO
-                    if (pa.length >= 1) {
-                        
-                    }
-
-                    // TVP
-                    if (pa.length >= 2) {
-                        byte[] TVP = {0x00, 0x00, 0x00, 0x00};
-                        // ---- Verify TVP from Security header ----
-                        long t = System.currentTimeMillis()/100;    // in 0.1s
-                        TVP[0] = (byte) ((t >> 24) & 0xFF);
-                        TVP[1] = (byte) ((t >> 16) & 0xFF);
-                        TVP[2] = (byte) ((t >>  8) & 0xFF);
-                        TVP[3] = (byte) ((t >>  0) & 0xFF);
-                        t = 0;
-                        for (int i = 0; i < TVP.length; i++) {
-                            t =  ((t << 8) + (TVP[i] & 0xff));
-                        }
-                        
-                        TVP = pa[1].getData();
-                        for (int i = 0; i < TVP.length; i++) {
-                            t_tvp =  ((t_tvp << 8) + (TVP[i] & 0xff));
-                        }
-                        if (Math.abs(t_tvp-t) > tcap_tvp_time_window*10) {
-                            logger.info("TCAP FW: TCAP verify signature. Wrong timestamp in TVP (received: " + t_tvp + ", current: " + t + ")");
-                            return 0;
-                        }
-                        // ---- End of Verify TVP ----
-                    }
-
-                    // Signature
-                    if (pa.length >= 3) {
-                        if (pa[2].getTagClass() == Tag.CLASS_PRIVATE && pa[2].getTag() == Tag.STRING_OCTET) {
-                            signatureBytes = pa[2].getData();
-                        }
-                    }
-                }
-
-                // remove all signature components
-                Component[] c = new Component[comps.length - signed_index.size()];
-                for (int i = 0; i < comps.length - signed_index.size(); i++) {
-                    if (!signed_index.contains(i)) {
-                        c[i] = comps[i];
-                    }
-                }
-
-                tcb.setComponent(c);
-                AsnOutputStream aos = new AsnOutputStream();
-                try {
-                    tcb.encode(aos);
-                } catch (EncodeException ex) {
-                    java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                }
-
-                byte[] _d = aos.toByteArray();
-                message.setData(_d);
-                String dataToSign = "";
-
-                // verify signature
-                try {
-                    comps = c;
-                    dataToSign = message.getCallingPartyAddress().getGlobalTitle().getDigits()
-                            + message.getCalledPartyAddress().getGlobalTitle().getDigits() + t_tvp;
-                    for (int i = 0; i < comps.length; i++) {
-                        AsnOutputStream _aos = new AsnOutputStream();
-                        try {
-                            comps[i].encode(_aos);
-                            dataToSign += Base64.getEncoder().encodeToString(_aos.toByteArray());
-                        } catch (EncodeException ex) {
-                            java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                        }
-                    }
-
-                    SS7FirewallConfig.signature.initVerify(publicKey);
-                    SS7FirewallConfig.signature.update(dataToSign.getBytes());
-                    if (signatureBytes != null && SS7FirewallConfig.signature.verify(signatureBytes)) {
-                        signature_ok = 1;
-                    }
-
-                } catch (InvalidKeyException ex) {
-                    java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                } catch (SignatureException ex) {
-                    java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                }
-
-                logger.debug("Removing TCAP Signed Data: " + dataToSign);
-                if (signatureBytes != null) {
-                    logger.debug("Removing TCAP Signature: " + Base64.getEncoder().encodeToString(signatureBytes));
-                }
-            }
-        }
-        return signature_ok;
-        // --------------------------------------------
-    }
-    
-    /**
-     * Method to add TCAP signature into SCCP message.
-     * Method currently is designed only for TCAP begin messages.
-     * 
-     * 
-     * @param message SCCP message
-     * @param tcb TCAP Begin Message
-     * @param comps TCAP Components
-     * @param lmrt Long Message Rule Type, if UDT or XUDT should be send
-     * @return Long Message Rule Type, , if UDT or XUDT should be send
-     */
-    LongMessageRuleType tcapSign(SccpDataMessage message, TCBeginMessage tcb, Component[] comps, LongMessageRuleType lmrt) {
-        // --------------- TCAP signing ---------------
-        LongMessageRuleType l = lmrt;
-        
-        KeyPair keyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.calling_gt_signing, message.getCallingPartyAddress().getGlobalTitle().getDigits());
-        if (keyPair != null) {
-            PrivateKey privateKey = keyPair.getPrivate();
-            
-            Component[] c = new Component[comps.length + 1];
-            int i;
-            boolean signed = false;
-            for (i = 0; i < comps.length; i++) {
-                c[i] = comps[i];
-                // already signed check
-                if (c[i].getType() == ComponentType.Invoke) {
-                    Invoke inv = (Invoke) comps[i];
-                    if (inv.getOperationCode().getLocalOperationCode() == OC_SIGNATURE) {
-                        signed = true;
-                    }
-                }
-            }
-            if (!signed) {
-                c[i] = new InvokeImpl();
-                ((InvokeImpl)c[i]).setInvokeId(1l);
-                OperationCode oc = TcapFactory.createOperationCode();
-                oc.setLocalOperationCode(OC_SIGNATURE);
-                ((InvokeImpl)c[i]).setOperationCode(oc);
-                
-                // Reserved (currently not used) - Signature Version
-                // TODO
-                Parameter p1 = TcapFactory.createParameter();
-                p1.setTagClass(Tag.CLASS_PRIVATE);
-                p1.setPrimitive(true);
-                p1.setTag(Tag.STRING_OCTET);
-                p1.setData("v1".getBytes());
-
-                // TVP
-                byte[] TVP = {0x00, 0x00, 0x00, 0x00};
-                        
-                long t = System.currentTimeMillis()/100;    // in 0.1s
-                TVP[0] = (byte) ((t >> 24) & 0xFF);
-                TVP[1] = (byte) ((t >> 16) & 0xFF);
-                TVP[2] = (byte) ((t >>  8) & 0xFF);
-                TVP[3] = (byte) ((t >>  0) & 0xFF);
-                
-                long t_tvp = 0;
-                for (int j = 0; j < TVP.length; j++) {
-                    t_tvp =  ((t_tvp << 8) + (TVP[j] & 0xff));
-                }
-                
-                Parameter p2 = TcapFactory.createParameter();
-                p2.setTagClass(Tag.CLASS_PRIVATE);
-                p2.setPrimitive(true);
-                p2.setTag(Tag.STRING_OCTET);
-                p2.setData(TVP);               
-                
-                // Signature
-                Parameter p3 = TcapFactory.createParameter();
-                p3.setTagClass(Tag.CLASS_PRIVATE);
-                p3.setPrimitive(true);
-                p3.setTag(Tag.STRING_OCTET);
-
-                try {
-                    SS7FirewallConfig.signature.initSign(privateKey);
-
-                    String dataToSign = message.getCallingPartyAddress().getGlobalTitle().getDigits()
-                            + message.getCalledPartyAddress().getGlobalTitle().getDigits() + t_tvp;
-                    for (i = 0; i < comps.length; i++) {
-                        AsnOutputStream _aos = new AsnOutputStream();
-                        try {
-                            comps[i].encode(_aos);
-                            dataToSign += Base64.getEncoder().encodeToString(_aos.toByteArray());
-                        } catch (EncodeException ex) {
-                            java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                        }
-                    }
-
-                    SS7FirewallConfig.signature.update(dataToSign.getBytes());
-                    byte[] signatureBytes = SS7FirewallConfig.signature.sign();
-                    logger.debug("Adding TCAP Signed Data: " + dataToSign);
-                    logger.debug("Adding TCAP Signature: " + Base64.getEncoder().encodeToString(signatureBytes));
-
-                    p3.setData(signatureBytes);
-
-                    Parameter p = TcapFactory.createParameter();
-                    p.setTagClass(Tag.CLASS_UNIVERSAL);
-                    p.setTag(0x04);
-                    p.setParameters(new Parameter[] {p1, p2, p3});
-                    
-                    ((InvokeImpl)c[i]).setParameter(p);
-                    tcb.setComponent(c);
-                    AsnOutputStream aos = new AsnOutputStream();
-                    try {
-                        tcb.encode(aos);
-                    } catch (EncodeException ex) {
-                        java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                    }
-
-                    byte[] _d = aos.toByteArray();
-                    message.setData(_d);
-
-                } catch (InvalidKeyException ex) {
-                    java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                } catch (SignatureException ex) {
-                    java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            }
-        }
-        return l;
-        // --------------------------------------------
-    }
-    
-    /**
      * Method handling the SCCP messages and executing the firewall logic.
      * The method contains sequence of execution of all firewall rules
      * according the configuration file.
@@ -1293,74 +1068,12 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
             if (message.getCalledPartyAddress().getGlobalTitle() != null) {
                 KeyPair keyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.called_gt_decryption, message.getCalledPartyAddress().getGlobalTitle().getDigits());
                 if (keyPair != null) {
-                    logger.debug("TCAP Decryption for SCCP Called GT = " + message.getCalledPartyAddress().getGlobalTitle().getDigits());
-                
-                    try {
-                        // Sending XUDT message from UDT message
-                        
-                        // SPI(version) and TVP(timestamp)
-                        byte[] SPI = {0x00, 0x00, 0x00, 0x00};
-                        byte[] TVP = {0x00, 0x00, 0x00, 0x00};
-                        
-                        byte[] data = null; 
-                        if (message.getData().length >= SPI.length) {
-                            SPI = Arrays.copyOfRange(message.getData(), 0, SPI.length);
-                            data = Arrays.copyOfRange(message.getData(), SPI.length, message.getData().length);
-                        } else {
-                            data = message.getData();
-                        }
-                        
-                        PrivateKey privateKey = keyPair.getPrivate();
-                        SS7FirewallConfig.cipher.init(Cipher.DECRYPT_MODE, privateKey);
-                        
-                        RSAPublicKey rsaPublicKey = (RSAPublicKey)keyPair.getPublic();
-                        int keyLength = rsaPublicKey.getModulus().bitLength() / 8;
-                        
-                        // TODO verify SPI
-      
-                        byte[][] datas = splitByteArray(data, keyLength/* - 11*/);
-                        byte[] decryptedText = null;
-                        for (byte[] b : datas) {
-                            
-                            byte[] d = SS7FirewallConfig.cipher.doFinal(b);
-                            // ------- Verify TVP --------
-                            long t = System.currentTimeMillis()/100;    // in 0.1s
-                            TVP[0] = (byte) ((t >> 24) & 0xFF);
-                            TVP[1] = (byte) ((t >> 16) & 0xFF);
-                            TVP[2] = (byte) ((t >>  8) & 0xFF);
-                            TVP[3] = (byte) ((t >>  0) & 0xFF);
-                            t = 0;
-                            for (int i = 0; i < TVP.length; i++) {
-                                t =  ((t << 8) + (TVP[i] & 0xff));
-                            }
-
-                            TVP[0] = d[0]; TVP[1] = d[1]; TVP[2] = d[2]; TVP[3] = d[3];
-                            long t_tvp = 0;
-                            for (int i = 0; i < TVP.length; i++) {
-                                t_tvp =  ((t_tvp << 8) + (TVP[i] & 0xff));
-                            }
-                            if (Math.abs(t_tvp-t) > tcap_tvp_time_window*10) {
-                                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: TCAP decryption. Wrong timestamp in TVP (received: " + t_tvp + ", current: " + t + ")", lua_hmap);
-                                return;
-                            }
-                            d = Arrays.copyOfRange(d, TVP.length, d.length);
-                            // ---- End of Verify TVP ----
-                            
-                            
-                            decryptedText = concatByteArray(decryptedText, d);
-                        }
-                        
-                        SccpDataMessage m = this.sccpMessageFactory.createDataMessageClass0(message.getCalledPartyAddress(), message.getCallingPartyAddress(), decryptedText, message.getOriginLocalSsn(), false, null, null);
-                        message = m;
-                    } catch (InvalidKeyException ex) {
-                        logger.info("TCAP FW: TCAP decryption failed for SCCP Called GT: " + message.getCalledPartyAddress().getGlobalTitle().getDigits() + " InvalidKeyException: "+ ex.getMessage());
-                        //java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                    } catch (IllegalBlockSizeException ex) {
-                        logger.info("TCAP FW: TCAP decryption failed for SCCP Called GT: " + message.getCalledPartyAddress().getGlobalTitle().getDigits() + " IllegalBlockSizeException: "+ ex.getMessage());
-                        //java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                    } catch (BadPaddingException ex) {
-                        logger.info("TCAP FW: TCAP decryption failed for SCCP Called GT: " + message.getCalledPartyAddress().getGlobalTitle().getDigits() + " BadPaddingException: "+ ex.getMessage());
-                        //java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                    Pair<SccpDataMessage, String> p = crypto.tcapDecrypt(message, this.sccpMessageFactory, keyPair);
+                    message = p.getKey();
+                    String r = p.getValue();
+                    if (!r.equals("")) {
+                        firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, r, lua_hmap);
+                        return;
                     }
                 }
             }
@@ -1470,12 +1183,17 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
                 if (message.getCallingPartyAddress() != null) { 
                     if (message.getCallingPartyAddress().getGlobalTitle() != null) {
                         // --------------- TCAP verify  ---------------
-                        if (tcapVerify(message, tcb, comps) == 0) {
-                            // Drop not correctly signed messages
-                            //logger.info("============ Wrong TCAP signature, message blocked. Calling GT = " + message.getCallingPartyAddress().getGlobalTitle().getDigits() + " ============");
+                        int signature_ok = -1;  // no key
+                        PublicKey publicKey = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.calling_gt_verify, message.getCallingPartyAddress().getGlobalTitle().getDigits());
+                        if (publicKey != null) {
+                            signature_ok = crypto.tcapVerify(message, tcb, comps, publicKey) ;
+                            if (signature_ok == 0) {
+                                // Drop not correctly signed messages
+                                //logger.info("============ Wrong TCAP signature, message blocked. Calling GT = " + message.getCallingPartyAddress().getGlobalTitle().getDigits() + " ============");
 
-                            firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: Wrong TCAP signature", lua_hmap);
-                            return;
+                                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: Wrong TCAP signature", lua_hmap);
+                                return;
+                            }
                         }
                         // --------------------------------------------
                     }
@@ -1627,13 +1345,13 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
                             ((ReturnResultLastImpl)c[0]).setOperationCode(oc);
 
                                                         
-                            // Reserved (currently not used) - Version
+                            // Capabilities
                             // TODO
                             Parameter p1 = TcapFactory.createParameter();
                             p1.setTagClass(Tag.CLASS_PRIVATE);
                             p1.setPrimitive(true);
                             p1.setTag(Tag.STRING_OCTET);
-                            p1.setData("v1".getBytes());
+                            p1.setData("Av1".getBytes());
                             
                             // GT prefix
                             Parameter p2 = TcapFactory.createParameter();
@@ -1643,18 +1361,31 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
                             byte[] d2 = key.getBytes();
                             p2.setData(d2);
                             
-                            // Public key
+                            // Public key type
+                            String publicKeyType = "";
+                            if (myKeyPair.getPublic() instanceof RSAPublicKey) {
+                                publicKeyType = "RSA";
+                            } else if (myKeyPair.getPublic() instanceof ECPublicKey) {
+                                publicKeyType = "EC";
+                            }
                             Parameter p3 = TcapFactory.createParameter();
                             p3.setTagClass(Tag.CLASS_PRIVATE);
                             p3.setPrimitive(true);
                             p3.setTag(Tag.STRING_OCTET);
-                            byte[] d3 = myKeyPair.getPublic().getEncoded();
-                            p3.setData(d3);
+                            p3.setData(publicKeyType.getBytes());
+                            
+                            // Public key
+                            Parameter p4 = TcapFactory.createParameter();
+                            p4.setTagClass(Tag.CLASS_PRIVATE);
+                            p4.setPrimitive(true);
+                            p4.setTag(Tag.STRING_OCTET);
+                            byte[] d4 = myKeyPair.getPublic().getEncoded();
+                            p4.setData(d4);
                             
                             Parameter p = TcapFactory.createParameter();
                             p.setTagClass(Tag.CLASS_UNIVERSAL);
                             p.setTag(0x04);
-                            p.setParameters(new Parameter[] { p1, p2, p3});
+                            p.setParameters(new Parameter[] { p1, p2, p3, p4});
                             ((ReturnResultLastImpl)c[0]).setParameter(p);
 
                            
@@ -1868,7 +1599,7 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
                             Parameter[] params = p.getParameters();
                             if (params != null && params.length >= 2) {
                                 
-                                // Reserved (currently not used) - Public key type
+                                // Capabilities
                                 // TODO
                                 Parameter p1 = params[0];
                                 
@@ -1877,15 +1608,20 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
                                 byte[] d2 = p2.getData();
                                 String called_gt = new String(d2);
 
-                                // Public key
+                                // Public key type
                                 Parameter p3 = params[2];
                                 byte[] d3 = p3.getData();
+                                String publicKeyType = new String(d3);                       
+                                
+                                // Public key
+                                Parameter p4 = params[3];
+                                byte[] d4 = p4.getData();
                                 // TODO add method into config to add public key
-                                byte[] publicKeyBytes =  d3;
+                                byte[] publicKeyBytes =  d4;
                                 try {
                                     X509EncodedKeySpec pubKeySpec = new X509EncodedKeySpec(publicKeyBytes);
                                     PublicKey publicKey;
-                                    publicKey = keyFactory.generatePublic(pubKeySpec);
+                                    publicKey = keyFactoryRSA.generatePublic(pubKeySpec);
                                     SS7FirewallConfig.called_gt_encryption.put(called_gt, publicKey);
                                 } catch (InvalidKeySpecException ex) {
                                     java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
@@ -1918,6 +1654,12 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
                     break;
                 }
             }
+        }
+        
+        // -------------- Externel Firewall rules -----------------
+        if (externalFirewallRules.ss7FirewallRules(message) == false) {
+            firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "SS7 FW: Match with Externel Firewall rules", lua_hmap);
+            return;
         }
         
         // -------------- LUA rules -----------------
@@ -1970,7 +1712,10 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
         
         // --------------- TCAP signing ---------------
         if (tag == TCBeginMessage._TAG) {
-            lmrt = tcapSign(message, tcb, comps, lmrt);
+            KeyPair keyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.calling_gt_signing, message.getCallingPartyAddress().getGlobalTitle().getDigits());
+            if (keyPair != null) {
+                lmrt = crypto.tcapSign(message, tcb, comps, lmrt, keyPair);
+            }
         }
         // --------------------------------------------
         
@@ -1979,44 +1724,9 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
             if (message.getCalledPartyAddress().getGlobalTitle() != null) {
                 PublicKey publicKey = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.called_gt_encryption, message.getCalledPartyAddress().getGlobalTitle().getDigits());
                 if (publicKey != null) {
-                    logger.debug("TCAP Encryption for SCCP Called GT = " + message.getCalledPartyAddress().getGlobalTitle().getDigits());
-                
-                    try {
-                        // Sending XUDT message from UDT message
-                        
-                        // SPI(version) and TVP(timestamp)
-                        byte[] SPI = {0x00, 0x00, 0x00, 0x00};  // TODO
-                        byte[] TVP = {0x00, 0x00, 0x00, 0x00};
-                        
-                        long t = System.currentTimeMillis()/100;    // in 0.1s
-                        TVP[0] = (byte) ((t >> 24) & 0xFF);
-                        TVP[1] = (byte) ((t >> 16) & 0xFF);
-                        TVP[2] = (byte) ((t >>  8) & 0xFF);
-                        TVP[3] = (byte) ((t >>  0) & 0xFF);
-                        
-                        RSAPublicKey rsaPublicKey = (RSAPublicKey)publicKey;
-                        SS7FirewallConfig.cipher.init(Cipher.ENCRYPT_MODE, publicKey);
-                        
-                        int keyLength = rsaPublicKey.getModulus().bitLength() / 8;
-                        
-                        byte[][] datas = splitByteArray(message.getData(), keyLength - 11 - 4);
-                        byte[] cipherText = null;
-                        for (byte[] b : datas) {
-                            cipherText = concatByteArray(cipherText, SS7FirewallConfig.cipher.doFinal(concatByteArray(TVP, b)));
-                        }
-                        
-                        cipherText = concatByteArray(SPI, cipherText);
-                        
-                        SccpDataMessage m = this.sccpMessageFactory.createDataMessageClass0(message.getCalledPartyAddress(), message.getCallingPartyAddress(), cipherText, message.getOriginLocalSsn(), false, null, null);
-                        message = m;
-                        lmrt = LongMessageRuleType.XUDT_ENABLED;
-                    } catch (InvalidKeyException ex) {
-                        java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                    } catch (IllegalBlockSizeException ex) {
-                        java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                    } catch (BadPaddingException ex) {
-                        java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                    }
+                    Pair<SccpDataMessage, LongMessageRuleType> p = crypto.tcapEncrypt(message, sccpMessageFactory, publicKey, lmrt);
+                    message = p.getKey();
+                    lmrt = p.getValue();
                 }
                 // ------------ Encryption Autodiscovery ------------ 
                 // only if not towards HPLMN
@@ -2078,7 +1788,10 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
                         m.setData(_d);
 
                         // --------- Add also TCAP signature ------------
-                        lmrt = tcapSign(m, t, c, lmrt);
+                        KeyPair keyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.calling_gt_signing, message.getCallingPartyAddress().getGlobalTitle().getDigits());
+                        if (keyPair != null) {
+                            lmrt = crypto.tcapSign(m, t, c, lmrt, keyPair);
+                        }
                         // ----------------------------------------------
                         
                         logger.info("============ Sending Autodiscovery Invoke ============ ");
@@ -3382,55 +3095,4 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
         
         return s;
     }
-    
-    /**
-     * Method to split byte array 
-     * 
-     * @param bytes original byte array
-     * @param chunkSize chunk size
-     * @return two dimensional byte array
-     */
-    private byte[][] splitByteArray(byte[] bytes, int chunkSize) {
-        int len = bytes.length;
-        int counter = 0;
-
-        int size = ((bytes.length - 1) / chunkSize) + 1;
-        byte[][] newArray = new byte[size][]; 
-
-        for (int i = 0; i < len - chunkSize + 1; i += chunkSize) {
-            newArray[counter++] = Arrays.copyOfRange(bytes, i, i + chunkSize);
-        }
-
-        if (len % chunkSize != 0) {
-            newArray[counter] = Arrays.copyOfRange(bytes, len - len % chunkSize, len);
-        }
-        
-        return newArray;
-    }
-    
-        
-    /**
-     * Concatenate two byte arrays
-     * 
-     * @param bytes first byte array
-     * @param chunkSize second byte array
-     * @return concatenated byte array
-     */
-    private byte[] concatByteArray(byte[] a, byte[] b) {
-        if (a == null) { 
-            return b;
-        }
-        if (b == null) {
-            return a;
-        }
-        
-        byte[] r = new byte[a.length + b.length];
-
-        System.arraycopy(a, 0, r, 0, a.length);
-
-        System.arraycopy(b, 0, r, a.length, b.length);
-        
-        return r;
-    }
-    
 }

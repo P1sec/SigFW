@@ -588,7 +588,7 @@ public class SS7ClientLiveInput extends AbstractSctpBase implements ManagementEv
                     
                     // TODO, remove if not needed
                     // added only for visibility, to not have many sctp streams in wireshark
-                    //Thread.sleep(100);
+                    Thread.sleep(100);
                 }
                 //logger.debug("Waiting ...");
                 Thread.sleep(1000);
