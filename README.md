@@ -2,10 +2,10 @@
 Open Source SS7/Diameter firewall
 
 ## Build instructions
+For more detailed installation and build instructions refer to this [page](https://github.com/P1sec/SigFW/wiki/Installation-and-Build-Instructions).
 
 ### Prerequisities
 Install Maven
-
 (Optional) Netbeans IDE for developers
 
 ### Clone source code
