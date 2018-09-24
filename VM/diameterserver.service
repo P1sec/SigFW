@@ -1,0 +1,14 @@
+[Unit]
+Description=DiameterFW server service
+
+[Service]
+User=p1sec
+Group=p1sec
+WorkingDirectory=/opt/SigFW/sigfw/sigfw.sigfw
+ExecStart=/usr/bin/mvn exec:java -Dexec.mainClass="diameterfw.DiameterServer"
+#Restart=always
+StandardOutput=null
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
