@@ -12,6 +12,8 @@
 	"sigfw_configuration": {
 		"sctp": {
 			"sctp_management_name": "sctp_mgmt",
+			"sctp_max_in_streams": "32",
+			"sctp_max_out_streams": "32",
 			"sctp_server": [
 				{
 					"server_name": "sctp_server",

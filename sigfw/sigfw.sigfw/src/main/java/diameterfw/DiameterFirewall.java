@@ -128,6 +128,8 @@ import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPrivateKey;
 import com.p1sec.sigfw.SigFW_interface.FirewallRulesInterface;
+import org.mobicents.protocols.sctp.netty.NettyAssociationImpl;
+import org.mobicents.protocols.sctp.netty.NettySctpManagementImpl;
 import sigfw.common.Crypto;
 import sigfw.common.Utils;
 import static sigfw.common.Utils.concatByteArray;
@@ -175,9 +177,13 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
     public static int unitTestingFlags_sendDiameterMessage_resultCode = ResultCode.SUCCESS;
 
     // SCTP
-    public static ManagementImpl sctpManagement;
+    public static NettySctpManagementImpl sctpManagement;
     public static List<Association> anonymousAssociations = new ArrayList<Association>();
-
+    
+    // IN, OUT MAX SCTP STREAMS
+    private static Map<Association, Integer> sctpAssciationsMaxInboundStreams = new HashMap<Association, Integer>();
+    private static Map<Association, Integer> sctpAssciationsMaxOutboundStreams = new HashMap<Association, Integer>();
+    
     // Diameter
     public final MessageParser parser = new MessageParser();
     
@@ -249,9 +255,13 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
     
     private void initSCTP(IpChannelType ipChannelType) throws Exception {
         logger.debug("Initializing SCTP Stack ....");
-        this.sctpManagement = new ManagementImpl(
+        //this.sctpManagement = new ManagementImpl(
+        //        (String)DiameterFirewallConfig.get("$.sigfw_configuration.sctp.sctp_management_name")
+        //);
+        this.sctpManagement = new org.mobicents.protocols.sctp.netty.NettySctpManagementImpl(
                 (String)DiameterFirewallConfig.get("$.sigfw_configuration.sctp.sctp_management_name")
         );
+        
         this.sctpManagement.setSingleThread(false);
 
         // TODO no persistent XMLs
@@ -259,14 +269,17 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
         // If the XMLs are present the SCTP server is started twice and there is problem with reconnections
         this.sctpManagement.setPersistDir(persistDir);
 
+        this.sctpManagement.setOptionSctpInitMaxstreams_MaxInStreams(Integer.parseInt((String)DiameterFirewallConfig.get("$.sigfw_configuration.sctp.sctp_max_in_streams")));
+        this.sctpManagement.setOptionSctpInitMaxstreams_MaxOutStreams(Integer.parseInt((String)DiameterFirewallConfig.get("$.sigfw_configuration.sctp.sctp_max_out_streams")));
+        
         this.sctpManagement.start();
         this.sctpManagement.setConnectDelay(10000);
-        this.sctpManagement.setMaxIOErrors(30);
+        //this.sctpManagement.setMaxIOErrors(30);
         this.sctpManagement.removeAllResourses();
         this.sctpManagement.addManagementEventListener(this);
         this.sctpManagement.setServerListener(this);
-
-
+        
+        
         // 1. Create SCTP Server     
         List<Map<String, Object>> sctp_server = DiameterFirewallConfig.get("$.sigfw_configuration.sctp.sctp_server");
         for (int i = 0; i < sctp_server.size(); i++) {
@@ -296,7 +309,7 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
         // 2. Create Client <-> FW Association
         List<Map<String, Object>> sctp_server_association = DiameterFirewallConfig.get("$.sigfw_configuration.sctp.sctp_server_association");
         for (int i = 0; i < sctp_server_association.size(); i++) {
-            AssociationImpl serverAssociation = this.sctpManagement.addServerAssociation(
+            NettyAssociationImpl serverAssociation = (NettyAssociationImpl)this.sctpManagement.addServerAssociation(
                     (String)sctp_server_association.get(i).get("peer_address"),
                     Integer.parseInt((String)sctp_server_association.get(i).get("peer_port")),
                     (String)sctp_server_association.get(i).get("server_name"),
@@ -311,7 +324,7 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
         // 3. Create FW <-> Server Association
         List<Map<String, Object>> sctp_association = DiameterFirewallConfig.get("$.sigfw_configuration.sctp.sctp_association");
         for (int i = 0; i < sctp_association.size(); i++) {
-            AssociationImpl clientAssociation = this.sctpManagement.addAssociation(
+            NettyAssociationImpl clientAssociation = (NettyAssociationImpl)this.sctpManagement.addAssociation(
                     (String)sctp_association.get(i).get("host_address"),
                     Integer.parseInt((String)sctp_association.get(i).get("host_port")),
                     (String)sctp_association.get(i).get("peer_address"),
@@ -770,8 +783,8 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
             ByteBuffer byteBuffer;
             byteBuffer = parser.encodeMessage((IMessage)message);
         
-            PayloadData payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, payloadProtocolId, streamNumber);
-
+            int sn = streamNumber;
+            
             // FW Server associations (Client -> FW)
             for (int i = 0; i < sctp_server_association.size(); i++) {
                 // The anonymous association does not have name, but can be configured in FW config as server association. Therefor run this code also without association name.
@@ -779,13 +792,40 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
                     try {
                         // TODO round robin
                         if (forward_indicator) {
-                            this.sctpManagement.getAssociation((String)sctp_association.get(0).get("assoc_name")).send(payloadData);
+                            
+                            Association a = this.sctpManagement.getAssociation((String)sctp_association.get(0).get("assoc_name"));
+                            
+                            // crop the outbound stream number to max for given association
+                            if (sctpAssciationsMaxInboundStreams.containsKey(a)) {
+                                sn = streamNumber % sctpAssciationsMaxInboundStreams.get(a).intValue();
+                            }
+                            PayloadData payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, payloadProtocolId, sn);
+                            
+                            a.send(payloadData);
                         } else {
                             // try to use anonymous associations first
                             if (!this.anonymousAssociations.isEmpty()) {
-                                this.anonymousAssociations.get(0).send(payloadData);
+                                
+                                Association a = this.anonymousAssociations.get(0);
+                                
+                                // crop the outbound stream number to max for given association
+                                if (sctpAssciationsMaxInboundStreams.containsKey(a)) {
+                                    sn = streamNumber % sctpAssciationsMaxInboundStreams.get(a).intValue();
+                                }
+                                PayloadData payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, payloadProtocolId, sn);
+                                
+                                a.send(payloadData);
                             } else {
-                                this.sctpManagement.getAssociation((String)sctp_server_association.get(0).get("assoc_name")).send(payloadData);
+                                
+                                Association a = this.sctpManagement.getAssociation((String)sctp_server_association.get(0).get("assoc_name"));
+                                
+                                // crop the outbound stream number to max for given association
+                                if (sctpAssciationsMaxInboundStreams.containsKey(a)) {
+                                    sn = streamNumber % sctpAssciationsMaxInboundStreams.get(a).intValue();
+                                }
+                                PayloadData payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, payloadProtocolId, sn);
+                                
+                                a.send(payloadData);
                             }
                         }
                     } catch (Exception ex) {
@@ -803,12 +843,39 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
                         if (forward_indicator) {
                             // try to use anonymous associations first
                             if (!this.anonymousAssociations.isEmpty()) {
-                                this.anonymousAssociations.get(0).send(payloadData);
+                                
+                                Association a = this.anonymousAssociations.get(0);
+                                
+                                // crop the outbound stream number to max for given association
+                                if (sctpAssciationsMaxOutboundStreams.containsKey(a)) {
+                                    sn = streamNumber % sctpAssciationsMaxOutboundStreams.get(a).intValue();
+                                }
+                                PayloadData payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, payloadProtocolId, sn);
+                                
+                                a.send(payloadData);
                             } else {
-                                this.sctpManagement.getAssociation((String)sctp_server_association.get(0).get("assoc_name")).send(payloadData);
+                                
+                                Association a = this.sctpManagement.getAssociation((String)sctp_server_association.get(0).get("assoc_name"));
+                                
+                                // crop the outbound stream number to max for given association
+                                if (sctpAssciationsMaxOutboundStreams.containsKey(a)) {
+                                    sn = streamNumber % sctpAssciationsMaxOutboundStreams.get(a).intValue();
+                                }
+                                PayloadData payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, payloadProtocolId, sn);
+                                
+                                a.send(payloadData);
                             }
                         } else {
-                            this.sctpManagement.getAssociation((String)sctp_association.get(0).get("assoc_name")).send(payloadData);
+                            
+                            Association a = this.sctpManagement.getAssociation((String)sctp_association.get(0).get("assoc_name"));
+                            
+                            // crop the outbound stream number to max for given association
+                            if (sctpAssciationsMaxOutboundStreams.containsKey(a)) {
+                                sn = streamNumber % sctpAssciationsMaxOutboundStreams.get(a).intValue();
+                            }
+                            PayloadData payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, payloadProtocolId, sn);
+                            
+                            a.send(payloadData);
                         }
                     } catch (Exception ex) {
                         java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
@@ -1430,8 +1497,14 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
         }
     }
 
-    public void onCommunicationUp(Association asctn, int i, int i1) {
+    public void onCommunicationUp(Association asctn, int maxInboundStreams, int maxOutboundStreams) {
         logger.debug("[[[[[[[[[[    onCommunicationUp      ]]]]]]]]]]");
+        logger.debug("maxInboundStreams = " + maxInboundStreams);
+        logger.debug("maxOutoundStreams = " + maxOutboundStreams);
+        
+        sctpAssciationsMaxInboundStreams.put(asctn, maxInboundStreams);
+        sctpAssciationsMaxOutboundStreams.put(asctn, maxOutboundStreams);
+        
     }
 
     public void onCommunicationShutdown(Association asctn) {

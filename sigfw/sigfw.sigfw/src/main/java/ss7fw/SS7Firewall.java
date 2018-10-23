@@ -304,6 +304,8 @@ import sigfw.connectorMThreat.ConnectorMThreatModuleRest;
 import com.p1sec.sigfw.SigFW_interface.FirewallRulesInterface;
 import java.security.interfaces.ECPublicKey;
 import javafx.util.Pair;
+import org.mobicents.protocols.sctp.netty.NettyAssociationImpl;
+import org.mobicents.protocols.sctp.netty.NettySctpManagementImpl;
 import sigfw.common.Crypto;
 import static sigfw.common.Utils.concatByteArray;
 import static sigfw.common.Utils.splitByteArray;
@@ -325,7 +327,7 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
     public static boolean unitTestingFlags_sendSccpMessage = false;
     
     // SCTP
-    private static ManagementImpl sctpManagement;
+    private static NettySctpManagementImpl sctpManagement;
 
     // M3UA
     private static M3UAManagementImpl serverM3UAMgmt;
@@ -399,16 +401,19 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
      */
     private void initSCTP(IpChannelType ipChannelType) throws Exception {
         logger.debug("Initializing SCTP Stack ....");
-        this.sctpManagement = new ManagementImpl(
+        this.sctpManagement = new org.mobicents.protocols.sctp.netty.NettySctpManagementImpl(
                 (String)SS7FirewallConfig.get("$.sigfw_configuration.sctp.sctp_management_name")
         );
         this.sctpManagement.setSingleThread(false);
         
         this.sctpManagement.setPersistDir(persistDir);
         
+        this.sctpManagement.setOptionSctpInitMaxstreams_MaxInStreams(Integer.parseInt((String)SS7FirewallConfig.get("$.sigfw_configuration.sctp.sctp_max_in_streams")));
+        this.sctpManagement.setOptionSctpInitMaxstreams_MaxOutStreams(Integer.parseInt((String)SS7FirewallConfig.get("$.sigfw_configuration.sctp.sctp_max_out_streams")));
+        
         this.sctpManagement.start();
         this.sctpManagement.setConnectDelay(10000);
-        this.sctpManagement.setMaxIOErrors(30);
+        //this.sctpManagement.setMaxIOErrors(30);
         this.sctpManagement.removeAllResourses();
         this.sctpManagement.addManagementEventListener(this);
 
