@@ -197,7 +197,7 @@ public class Crypto implements CryptoInterface {
                         List<String> strings = new ArrayList<String>();
                         for (int i = 0; i < avps.size(); i++) {
                             Avp a = avps.getAvpByIndex(i);
-                            if (a.getCode() != Avp.RECORD_ROUTE) {
+                            if (a.getCode() != Avp.ROUTE_RECORD) {
                                 strings.add(a.getCode() + "|" + Base64.getEncoder().encodeToString(a.getRawData()));
                             }
                         }
@@ -208,7 +208,7 @@ public class Crypto implements CryptoInterface {
 
                         /*for (int i = 0; i < avps.size(); i++) {
                             Avp a = avps.getAvpByIndex(i);
-                            if (a.getCode() != Avp.RECORD_ROUTE) {
+                            if (a.getCode() != Avp.ROUTE_RECORD) {
                                 dataToSign += ":" + Base64.getEncoder().encodeToString(a.getRawData());
                             }
                         }*/
@@ -323,7 +323,7 @@ public class Crypto implements CryptoInterface {
                 List<String> strings = new ArrayList<String>();
                 for (int i = 0; i < avps.size(); i++) {
                     a = avps.getAvpByIndex(i);
-                    if (a.getCode() != Avp.RECORD_ROUTE) {
+                    if (a.getCode() != Avp.ROUTE_RECORD) {
                         strings.add(a.getCode() + "|" + Base64.getEncoder().encodeToString(a.getRawData()));
                     }
                 }
@@ -334,7 +334,7 @@ public class Crypto implements CryptoInterface {
 
                 /*for (int i = 0; i < avps.size(); i++) {
                     Avp a = avps.getAvpByIndex(i);
-                    if (a.getCode() != Avp.RECORD_ROUTE) {
+                    if (a.getCode() != Avp.ROUTE_RECORD) {
                         dataToSign += ":" + Base64.getEncoder().encodeToString(a.getRawData());
                     }
                 }*/
