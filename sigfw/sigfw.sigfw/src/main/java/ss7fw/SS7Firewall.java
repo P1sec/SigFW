@@ -1551,7 +1551,7 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
                     
                     // ---------- MAP firewall ----------
                     // MAP Cat2 filtering
-                    if (oc != null && tag == TCBeginMessage._TAG) {
+                    if (oc != null) {
                         if (SS7FirewallConfig.map_cat2_oc_blacklist.containsKey(oc.getStringValue())) {
                             // If towards HPLMN and not originated from HPLMN
                             if (SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCalledPartyAddress().getGlobalTitle().getDigits())
