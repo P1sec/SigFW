@@ -586,4 +586,14 @@ public class DiameterClientLiveInput implements ManagementEventListener, ServerL
         logger.debug("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
+    @Override
+    public void onServerModified(Server server) {
+        logger.debug("[[[[[[[[[[    onServerModified      ]]]]]]]]]]");
+    }
+
+    @Override
+    public void onAssociationModified(Association asctn) {
+        logger.debug("[[[[[[[[[[    onAssociationModified      ]]]]]]]]]]");
+    }
+
 }

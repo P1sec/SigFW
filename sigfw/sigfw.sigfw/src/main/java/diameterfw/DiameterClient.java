@@ -101,8 +101,8 @@ public class DiameterClient implements EventListener<Request, Answer> {
 	private static final long vendorID = 66666;
 	private static final long applicationID = 16777251;
 	private ApplicationId authAppId = ApplicationId.createByAuthAppId(applicationID);
-	private static final int exchangeTypeCode = 888;
-	private static final int exchangeDataCode = 999;
+	private static final int exchangeTypeCode = 1888;
+	private static final int exchangeDataCode = 1999;
 	// enum values for Exchange-Type AVP
 	private static final int EXCHANGE_TYPE_INITIAL = 0;
 	private static final int EXCHANGE_TYPE_INTERMEDIATE = 1;
@@ -254,6 +254,11 @@ public class DiameterClient implements EventListener<Request, Answer> {
         }
         
 	private void sendNextRequest(int enumType) throws InternalException, IllegalDiameterStateException, RouteException, OverloadException {
+            
+            if (this.session == null) {
+                return;
+            }
+            
             Request r = this.session.createRequest(commandCode, this.authAppId, realmName, serverURI);
             // here we have all except our custom avps
 

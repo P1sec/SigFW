@@ -534,7 +534,7 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
         }
         
         
-        logger.setLevel(org.apache.log4j.Level.DEBUG);
+        //logger.setLevel(org.apache.log4j.Level.DEBUG);
 
         // ---- REST API -----
         ServletContextHandler context = new ServletContextHandler(ServletContextHandler.SESSIONS);
@@ -1584,5 +1584,15 @@ public class DiameterFirewall implements /*NetworkReqListener,*/ ManagementEvent
         }
         
         return s;
+    }
+
+    @Override
+    public void onServerModified(Server server) {
+        logger.debug("[[[[[[[[[[    onServerModified      ]]]]]]]]]]");
+    }
+
+    @Override
+    public void onAssociationModified(Association asctn) {
+        logger.debug("[[[[[[[[[[    onAssociationModified      ]]]]]]]]]]");
     }
 }

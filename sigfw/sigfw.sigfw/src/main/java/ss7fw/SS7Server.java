@@ -938,4 +938,14 @@ public class SS7Server extends AbstractSctpBase implements MAPDialogListener, MA
             logger.warn(String.format("SCTP AssociationDown name=%s peer=%s", asctn.getName(), asctn.getPeerAddress()));
         }
     }
+
+    @Override
+    public void onServerModified(Server server) {
+        logger.debug("[[[[[[[[[[    onServerModified      ]]]]]]]]]]");
+    }
+
+    @Override
+    public void onAssociationModified(Association asctn) {
+       logger.debug("[[[[[[[[[[    onAssociationModified      ]]]]]]]]]]");
+    }
 }

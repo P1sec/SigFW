@@ -1478,4 +1478,14 @@ public class SS7Honeypot extends AbstractSctpBase implements SccpListener, MAPDi
     public void onAnyTimeSubscriptionInterrogationResponse(AnyTimeSubscriptionInterrogationResponse atsir) {
         logger.debug("[[[[[[[[[[    onAnyTimeSubscriptionInterrogationResponse      ]]]]]]]]]]");
     }
+
+    @Override
+    public void onServerModified(Server server) {
+        logger.debug("[[[[[[[[[[    onServerModified      ]]]]]]]]]]");
+    }
+
+    @Override
+    public void onAssociationModified(Association asctn) {
+        logger.debug("[[[[[[[[[[    onAssociationModified      ]]]]]]]]]]");
+    }
 }

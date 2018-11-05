@@ -46,7 +46,7 @@
 			"firewall_rules_comment": "# Firewall filtering rules configuration",
 			
 			"firewall_policy_comment": "# Allowed value is one from: DROP_SILENTLY, DROP_WITH_DIAMETER_ERROR, DNAT_TO_HONEYPOT, ALLOW",
-			"firewall_policy": "DNAT_TO_HONEYPOT",
+			"firewall_policy": "DROP_SILENTLY",
 				
 			"diameter": {
 				"origin_realm_blacklist": [
@@ -70,7 +70,7 @@
 			"lua": {
 				"lua_comment": "# LUA Blacklist firewall rules. Currently supported LUA variables are: diameter_orig_host, diameter_orig_realm, diameter_dest_host, diameter_dest_realm, diameter_cc, diameter_ai, diameter_imsi, diameter_msisdn",
 				"blacklist_rules": [
-					"diameter_orig_realm == 'exchangeClient.example.org'",
+					"diameter_orig_realm == 'exchangeClientA.example.org'",
 					"diameter_orig_realm == 'exchangeClientB.example.org'"
 				]
 			},
@@ -139,6 +139,7 @@
 				}
 			],
 			"origin_realm_signing": [
+
 			]
 		}
 	}
