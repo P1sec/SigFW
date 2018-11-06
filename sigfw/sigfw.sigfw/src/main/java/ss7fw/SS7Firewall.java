@@ -33,20 +33,13 @@ import java.net.SocketException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
-import java.security.InvalidKeyException;
 import java.security.KeyPair;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.PrivateKey;
 import java.security.PublicKey;
-import java.security.SignatureException;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
@@ -54,7 +47,6 @@ import org.apache.log4j.Logger;
 import org.mobicents.protocols.api.IpChannelType;
 import org.mobicents.protocols.asn.AsnInputStream;
 import org.mobicents.protocols.asn.Tag;
-import org.mobicents.protocols.sctp.ManagementImpl;
 import org.mobicents.protocols.ss7.m3ua.As;
 import org.mobicents.protocols.ss7.m3ua.AspFactory;
 import org.mobicents.protocols.ss7.m3ua.ExchangeType;
@@ -78,7 +70,6 @@ import org.mobicents.protocols.ss7.map.api.dialog.MAPRefuseReason;
 import org.mobicents.protocols.ss7.map.api.dialog.MAPUserAbortChoice;
 import org.mobicents.protocols.ss7.map.api.errors.MAPErrorMessage;
 import org.mobicents.protocols.ss7.map.api.primitives.AddressString;
-import org.mobicents.protocols.ss7.map.api.primitives.IMSI;
 import org.mobicents.protocols.ss7.map.api.primitives.MAPExtensionContainer;
 import org.mobicents.protocols.ss7.map.api.service.callhandling.IstCommandRequest;
 import org.mobicents.protocols.ss7.map.api.service.callhandling.IstCommandResponse;
@@ -232,9 +223,6 @@ import java.util.HashMap;
 import java.util.Random;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.TimeUnit;
-import javax.crypto.BadPaddingException;
-import javax.crypto.Cipher;
-import javax.crypto.IllegalBlockSizeException;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
@@ -276,8 +264,6 @@ import org.mobicents.protocols.ss7.map.service.mobility.subscriberManagement.Ins
 import org.mobicents.protocols.ss7.mtp.Mtp3EndCongestionPrimitive;
 import org.mobicents.protocols.ss7.sccp.NetworkIdState;
 import org.mobicents.protocols.ss7.sccp.impl.message.MessageFactoryImpl;
-import org.mobicents.protocols.ss7.sccp.impl.message.SccpDataMessageImpl;
-import org.mobicents.protocols.ss7.sccp.impl.message.SccpNoticeMessageImpl;
 import org.mobicents.protocols.ss7.sccp.message.SccpMessage;
 import org.mobicents.protocols.ss7.sccp.parameter.GlobalTitle;
 import org.mobicents.protocols.ss7.sccp.parameter.ParameterFactory;
@@ -287,16 +273,10 @@ import org.mobicents.protocols.ss7.tcap.api.TCAPStack;
 import org.mobicents.protocols.ss7.tcap.asn.EncodeException;
 import org.mobicents.protocols.ss7.tcap.asn.InvokeImpl;
 import org.mobicents.protocols.ss7.tcap.asn.ReturnResultLastImpl;
-import org.mobicents.protocols.ss7.tcap.asn.UserInformation;
-import org.mobicents.protocols.ss7.tcap.asn.UserInformationImpl;
-import org.mobicents.protocols.ss7.tcap.asn.comp.ComponentType;
 import static org.mobicents.protocols.ss7.tcap.asn.comp.ComponentType.ReturnResultLast;
 import org.mobicents.protocols.ss7.tcap.asn.comp.OperationCode;
 import org.mobicents.protocols.ss7.tcap.asn.comp.ReturnResultLast;
-import static ss7fw.SS7FirewallConfig.called_gt_encryption;
-import static ss7fw.SS7FirewallConfig.firewallPolicy;
 import static ss7fw.SS7FirewallConfig.keyFactoryRSA;
-import static ss7fw.SS7FirewallConfig.keyFactoryEC;
 import sigfw.connectorIDS.ConnectorIDS;
 import sigfw.connectorIDS.ConnectorIDSModuleRest;
 import sigfw.connectorMThreat.ConnectorMThreat;
@@ -304,11 +284,8 @@ import sigfw.connectorMThreat.ConnectorMThreatModuleRest;
 import com.p1sec.sigfw.SigFW_interface.FirewallRulesInterface;
 import java.security.interfaces.ECPublicKey;
 import javafx.util.Pair;
-import org.mobicents.protocols.sctp.netty.NettyAssociationImpl;
 import org.mobicents.protocols.sctp.netty.NettySctpManagementImpl;
 import sigfw.common.Crypto;
-import static sigfw.common.Utils.concatByteArray;
-import static sigfw.common.Utils.splitByteArray;
 /**
  * Main SS7Firewall class. Class contains mainly static variables used to build the SS7 stacks.
  * 
@@ -545,8 +522,8 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
         }
         
         // Listeners
-        serverM3UAMgmt.addMtp3UserPartListener(this);
-        clientM3UAMgmt.addMtp3UserPartListener(this);
+        //serverM3UAMgmt.addMtp3UserPartListener(this);
+        //clientM3UAMgmt.addMtp3UserPartListener(this);
         
         logger.debug("Initialized M3UA Stack Firewall Client....");
     }
@@ -667,7 +644,7 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
 
         SS7Firewall.tcapStack = SS7Firewall.mapStack.getTCAPStack();
         SS7Firewall.tcapStack.setPreviewMode(true);
-        SS7Firewall.tcapStack.getProvider().addTCListener(this);
+        //SS7Firewall.tcapStack.getProvider().addTCListener(this);
         
         // TODO uncomment to get MAP listeners
         //this.tcapStack.start();
@@ -679,7 +656,7 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
         
         this.mapProvider = this.mapStack.getMAPProvider();
         
-        this.mapProvider.addMAPDialogListener(this);
+        /*this.mapProvider.addMAPDialogListener(this);
         //this.mapProvider.addMAPServiceLitener(this);
 
         this.mapProvider.getMAPServiceSupplementary().addMAPServiceListener(this);
@@ -701,7 +678,7 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
         this.mapProvider.getMAPServicePdpContextActivation().acivate();
         
         this.mapProvider.getMAPServiceSms().addMAPServiceListener(this);
-        this.mapProvider.getMAPServiceSms().acivate();
+        this.mapProvider.getMAPServiceSms().acivate();*/
         
         // TODO uncomment to get MAP listeners
         //this.mapStack.start();
@@ -998,6 +975,7 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
         Mtp3UserPart mup = this.serverM3UAMgmt;        
         Mtp3UserPart mupReturn = this.clientM3UAMgmt;
         
+        
         // LUA variables
         HashMap<String, String> lua_hmap = new HashMap<String, String>();
         lua_hmap.put("sccp_calling_gt", "");
@@ -1037,7 +1015,7 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
         if (message.getType() == SccpMessage.MESSAGE_TYPE_XUDT) {
             lmrt = LongMessageRuleType.XUDT_ENABLED;
         }
-            
+               
         // -------------  SCCP firewall -------------
        
         // Calling GT whitelist and blacklist

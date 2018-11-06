@@ -244,7 +244,7 @@ public class SS7FirewallPerformanceTests implements ManagementEventListener, Ass
                 // if there is more than 2000 messages sent and not recieved
                 // throttle sending to not overflow the recieving buffer
                 if (i - messagesRecieved > 2000) {
-                    Thread.currentThread().sleep(1000);
+                    Thread.currentThread().sleep(100);
                 }
 
             }
