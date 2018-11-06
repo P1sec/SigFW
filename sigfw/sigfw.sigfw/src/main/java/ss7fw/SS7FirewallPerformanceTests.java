@@ -21,11 +21,11 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  * 
- * This modules requires DiameterFirewallFirstInstance and DiameterFirewallSecondInstance to be running
- * Or alternatively  DiameterFirewall to be running
+ * This modules requires SS7FirewallFirstInstance and SS7FirewallSecondInstance to be running
+ * Or alternatively  SS7Firewall to be running
  * 
  */
-package diameterfw;
+package ss7fw;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -45,16 +45,16 @@ import org.mobicents.protocols.api.Server;
 import org.mobicents.protocols.sctp.netty.NettyAssociationImpl;
 import org.mobicents.protocols.sctp.netty.NettySctpManagementImpl;
 
-public class DiameterFirewallPerformanceTests implements ManagementEventListener, AssociationListener {
+public class SS7FirewallPerformanceTests implements ManagementEventListener, AssociationListener {
 
-    private static final Logger log = Logger.getLogger(DiameterFirewallPerformanceTests.class);
+    private static final Logger log = Logger.getLogger(SS7FirewallPerformanceTests.class);
     static {
         //configure logging.
         configLog4j();
     }
 
     public static NettySctpManagementImpl sctpManagement;
-    static final private String persistDir = "XmlDiameterCLientPerformanceTest";
+    static final private String persistDir = "XmlSS7CLientPerformanceTest";
     private boolean finished = false;
     private boolean sctpClientAssociationUp = false;
     private boolean sctpServerAssociationUp = false;
@@ -67,7 +67,7 @@ public class DiameterFirewallPerformanceTests implements ManagementEventListener
     
 
     private static void configLog4j() {
-        InputStream inStreamLog4j = DiameterFirewallPerformanceTests.class.getClassLoader().getResourceAsStream("log4j.properties");
+        InputStream inStreamLog4j = SS7FirewallPerformanceTests.class.getClassLoader().getResourceAsStream("log4j.properties");
         Properties propertiesLog4j = new Properties();
         try {
             propertiesLog4j.load(inStreamLog4j);
@@ -120,7 +120,7 @@ public class DiameterFirewallPerformanceTests implements ManagementEventListener
         this.sctpManagement.addServer(
                 (String)"server",
                 (String)"127.0.0.1",
-                3868,
+                3434,
                 ipChannelType,
                 true,  //acceptAnonymousConnections
                 0,     //maxConcurrentConnectionsCount
@@ -131,7 +131,7 @@ public class DiameterFirewallPerformanceTests implements ManagementEventListener
         // 2. FW2 -> Server  Association
         NettyAssociationImpl serverAssociation = (NettyAssociationImpl)this.sctpManagement.addServerAssociation(
                 (String)"127.0.0.1",
-                13869,
+                2344,
                 (String)"server",
                 (String)"sctp_from_firewall_to_server",
                 ipChannelType
@@ -142,9 +142,9 @@ public class DiameterFirewallPerformanceTests implements ManagementEventListener
         // 3. Client -> FW1 Association
         clientAssociation = (NettyAssociationImpl)this.sctpManagement.addAssociation(
                 (String)"127.0.0.1",
-                13868,
+                2345,
                 (String)"127.0.0.1",
-                3869,
+                3433,
                 (String)"sctp_from_client_to_firewall",
                 ipChannelType,
                 null
@@ -189,30 +189,33 @@ public class DiameterFirewallPerformanceTests implements ManagementEventListener
             PayloadData payloadData;
             String a = "sctp_from_client_to_firewall";
              
-            /*
-            // CER
+            
+            // ASPUP
             streamNumber = 0;
-            bytes = hexStringToByteArray("010000a0800001010000000062d7a7f75ad0000000000108400000113132372e302e302e31000000000001284000002265786368616e6765436c69656e742e6578616d706c652e6f72670000000001014000000e00017f00000100000000010a4000000c000000000000010d000000116a4469616d65746572000000000001024000000c010000230000010b0000000c00000001000001164000000ce2d7a85d");
+            bytes = hexStringToByteArray("01000301000000100011000800000002");
             byteBuffer = ByteBuffer.wrap(bytes);
             if (sctpAssciationsMaxInboundStreams.containsKey(a)) {
                 sn = streamNumber % sctpAssciationsMaxInboundStreams.get(a).intValue();
             }
-            payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, 0, sn);
+            payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, 3, sn);
             clientAssociation.send(payloadData);
+            
+            // Wait for ASPUP_ACK
+            Thread.currentThread().sleep(2000);
+            
+            // ASPAC
+            streamNumber = 0;
+            bytes = hexStringToByteArray("0100040100000018000b0008000000020006000800000064");
+            byteBuffer = ByteBuffer.wrap(bytes);
+            if (sctpAssciationsMaxInboundStreams.containsKey(a)) {
+                sn = streamNumber % sctpAssciationsMaxInboundStreams.get(a).intValue();
+            }
+            payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, 3, sn);
+            clientAssociation.send(payloadData);
+            
+            // Wait
+            Thread.currentThread().sleep(2000);
 
-            
-            // DWR
-            streamNumber = 0;
-            bytes = hexStringToByteArray("01000058800001180000000062dbde896c10000600000108400000113132372e302e302e31000000000001284000002265786368616e6765436c69656e742e6578616d706c652e6f72670000000001164000000ce2dbdf20");
-            byteBuffer = ByteBuffer.wrap(bytes);
-            if (sctpAssciationsMaxInboundStreams.containsKey(a)) {
-                sn = streamNumber % sctpAssciationsMaxInboundStreams.get(a).intValue();
-            }
-            payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, 0, sn);
-            clientAssociation.send(payloadData);
-            */
-            
-            
             //do send
             log.info("=== Starting with the performance tests ===");
             
@@ -223,14 +226,14 @@ public class DiameterFirewallPerformanceTests implements ManagementEventListener
             for (int i = 0; i < max_messages; i++) {
                 
                 
-                // ULR
+                // processUnstructuredSS-Request
                 streamNumber = i;
-                bytes = hexStringToByteArray("010000f88000013c0100002362e31f1209d000020000010740000037426164437573746f6d53657373696f6e49643b596573576543616e5061737349643b3135343134303438333235313400000001024000000c010000230000011b4000001c65786368616e67652e6578616d706c652e6f726700000108400000113132372e302e302e31000000000001284000002265786368616e6765436c69656e742e6578616d706c652e6f7267000000000001400000183131313131313131313131313131313100000760c00000100001046a00000000000007cfc00000230001046a492077616e7420746f20676574203320616e737765727300");
+                bytes = hexStringToByteArray("01000101000000b80006000800000064021000a50000000100000002030200010901030e190b12080012042222222222220b12080012041111111111117762754804000000016b432841060700118605010101a036603480020780a109060704000001001302be232821060704000001010101a016a01480099611111111111111f18107961111111111f16c28a12602010002013b301e04010f0410aa582ca65ac562b1582c168bc562b1118007911111111111f1000000");
                 byteBuffer = ByteBuffer.wrap(bytes);
                 if (sctpAssciationsMaxInboundStreams.containsKey(a)) {
                     sn = streamNumber % sctpAssciationsMaxInboundStreams.get(a).intValue();
                 }
-                payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, 0, sn);
+                payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, 3, sn);
                 clientAssociation.send(payloadData);
                
                 if (i%100 == 0) {
@@ -279,7 +282,7 @@ public class DiameterFirewallPerformanceTests implements ManagementEventListener
     }
 
     public static void main(String[] args) {
-        DiameterFirewallPerformanceTests ec = new DiameterFirewallPerformanceTests();
+        SS7FirewallPerformanceTests ec = new SS7FirewallPerformanceTests();
         try {
             ec.initSCTP(IpChannelType.SCTP);
 
@@ -295,7 +298,7 @@ public class DiameterFirewallPerformanceTests implements ManagementEventListener
             }
 
         } catch (Exception ex) {
-            java.util.logging.Logger.getLogger(DiameterFirewallPerformanceTests.class.getName()).log(Level.SEVERE, null, ex);
+            java.util.logging.Logger.getLogger(SS7FirewallPerformanceTests.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
     
@@ -418,6 +421,64 @@ public class DiameterFirewallPerformanceTests implements ManagementEventListener
     @Override
     public void onPayload(Association asctn, PayloadData pd) {
         log.debug("[[[[[[[[[[    onPayload      ]]]]]]]]]]");
+        
+        if (messagesRecieved == 0) {
+            
+            // Answer
+            try {
+                int sn = 0;
+                int streamNumber = 0;
+                byte[] bytes;
+                ByteBuffer byteBuffer;
+                PayloadData payloadData;
+                
+                // ASPUP_ACK
+                bytes = hexStringToByteArray("01000304000000100011000800000003");
+                byteBuffer = ByteBuffer.wrap(bytes);
+                if (sctpAssciationsMaxInboundStreams.containsKey(asctn.getName())) {
+                    sn = streamNumber % sctpAssciationsMaxInboundStreams.get(asctn.getName()).intValue();
+                }
+                payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, 3, sn);
+                asctn.send(payloadData);            
+            } catch (Exception ex) {
+                java.util.logging.Logger.getLogger(SS7FirewallPerformanceTests.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+        
+        if (messagesRecieved == 1) {
+            
+            // Answer
+            try {
+                int sn = 0;
+                int streamNumber = 0;
+                byte[] bytes;
+                ByteBuffer byteBuffer;
+                PayloadData payloadData;
+
+                // ACPAC_ACK
+                bytes = hexStringToByteArray("0100040300000018000b0008000000020006000800000064");
+                byteBuffer = ByteBuffer.wrap(bytes);
+                if (sctpAssciationsMaxInboundStreams.containsKey(asctn.getName())) {
+                    sn = streamNumber % sctpAssciationsMaxInboundStreams.get(asctn.getName()).intValue();
+                }
+                payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, 3, sn);
+                asctn.send(payloadData);
+                
+                Thread.currentThread().sleep(1000);
+                
+                // NTFY
+                bytes = hexStringToByteArray("0100000100000020000d00080001000300110008000000030006000800000064");
+                byteBuffer = ByteBuffer.wrap(bytes);
+                if (sctpAssciationsMaxInboundStreams.containsKey(asctn.getName())) {
+                    sn = streamNumber % sctpAssciationsMaxInboundStreams.get(asctn.getName()).intValue();
+                }
+                payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, 3, sn);
+                asctn.send(payloadData);
+                
+            } catch (Exception ex) {
+                java.util.logging.Logger.getLogger(SS7FirewallPerformanceTests.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
         
         messagesRecieved++;
     }

@@ -1881,7 +1881,7 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
             }
         }
         
-        logger.setLevel(org.apache.log4j.Level.DEBUG);
+        //logger.setLevel(org.apache.log4j.Level.DEBUG);
         
         // ---- REST API -----
         ServletContextHandler context = new ServletContextHandler(ServletContextHandler.SESSIONS);
