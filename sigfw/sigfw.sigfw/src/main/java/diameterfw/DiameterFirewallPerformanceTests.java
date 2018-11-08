@@ -30,10 +30,12 @@ package diameterfw;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.logging.Level;
+import javax.xml.bind.DatatypeConverter;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
 import org.mobicents.protocols.api.Association;
@@ -60,6 +62,7 @@ public class DiameterFirewallPerformanceTests implements ManagementEventListener
     private boolean sctpServerAssociationUp = false;
     NettyAssociationImpl clientAssociation = null;
     int messagesRecieved = 0;
+    int errorMessagesRecieved = 0;
     
     // IN, OUT MAX SCTP STREAMS
     private static Map<Association, Integer> sctpAssciationsMaxInboundStreams = new HashMap<Association, Integer>();
@@ -219,7 +222,7 @@ public class DiameterFirewallPerformanceTests implements ManagementEventListener
             long startTime = System.nanoTime();
             
             
-            int max_messages = 20000;
+            int max_messages = 500000;
             for (int i = 0; i < max_messages; i++) {
                 
                 
@@ -236,12 +239,13 @@ public class DiameterFirewallPerformanceTests implements ManagementEventListener
                 if (i%100 == 0) {
                     log.info("Messages sent     ........ #" + i);
                     log.info("Messages recieved ........ #" + messagesRecieved);
+                    log.info("Error Messages recieved .. #" + errorMessagesRecieved);
                 }
                 
-                // if there is more than 2000 messages sent and not recieved
+                // if there is more than 5000 messages sent and not recieved
                 // throttle sending to not overflow the recieving buffer
-                if (i - messagesRecieved > 2000) {
-                    Thread.currentThread().sleep(100);
+                if (i - messagesRecieved > 5000) {
+                    Thread.currentThread().sleep(10);
                 }
 
             }
@@ -253,6 +257,7 @@ public class DiameterFirewallPerformanceTests implements ManagementEventListener
 
                 log.info("Messages sent     ........ #" + max_messages);
                 log.info("Messages recieved ........ #" + messagesRecieved);
+                log.info("Error Messages recieved .. #" + errorMessagesRecieved);
             }
             
             long estimatedTime = System.nanoTime() - startTime;
@@ -419,6 +424,39 @@ public class DiameterFirewallPerformanceTests implements ManagementEventListener
     public void onPayload(Association asctn, PayloadData pd) {
         log.debug("[[[[[[[[[[    onPayload      ]]]]]]]]]]");
         
+        /*Thread thread = new Thread(){
+            public void run(){
+                try {
+                    Thread.currentThread().sleep(1000);
+                } catch (InterruptedException ex) {
+                    java.util.logging.Logger.getLogger(DiameterFirewallPerformanceTests.class.getName()).log(Level.SEVERE, null, ex);
+                }
+                log.info("ThreadId = " + Thread.currentThread().getId());
+            }
+        };
+        thread.start();
+            
+        log.info("ThreadId = " + Thread.currentThread().getId());*/
+        
+        ByteBuffer buf = ByteBuffer.wrap(pd.getData());
+        byte[] arr = new byte[buf.remaining()];
+        buf.get(arr);
+        
+        // OK - The same ULR as was sent was recieved
+        // 010000f88000013c0100002362e31f1209d000020000010740000037426164437573746f6d53657373696f6e49643b596573576543616e5061737349643b3135343134303438333235313400000001024000000c010000230000011b4000001c65786368616e67652e6578616d706c652e6f726700000108400000113132372e302e302e31000000000001284000002265786368616e6765436c69656e742e6578616d706c652e6f7267000000000001400000183131313131313131313131313131313100000760c00000100001046a00000000000007cfc00000230001046a492077616e7420746f20676574203320616e737765727300
+        if (DatatypeConverter.printHexBinary(arr).equals("010000F88000013C0100002362E31F1209D000020000010740000037426164437573746F6D53657373696F6E49643B596573576543616E5061737349643B3135343134303438333235313400000001024000000C010000230000011B4000001C65786368616E67652E6578616D706C652E6F726700000108400000113132372E302E302E31000000000001284000002265786368616E6765436C69656E742E6578616D706C652E6F7267000000000001400000183131313131313131313131313131313100000760C00000100001046A00000000000007CFC00000230001046A492077616E7420746F20676574203320616E737765727300")) {
+
+        }
+        // OK - ULR just differently ordered AVPs after 2 FWs
+        // 010000F88000013C0100002362E31F1209D000020000010740000037426164437573746F6D53657373696F6E49643B596573576543616E5061737349643B31353431343034383332353134000000011B4000001C65786368616E67652E6578616D706C652E6F726700000108400000113132372E302E302E31000000000001284000002265786368616E6765436C69656E742E6578616D706C652E6F72670000000007CFC00000230001046A492077616E7420746F20676574203320616E73776572730000000760C00000100001046A00000000000000014000001831313131313131313131313131313131000001024000000C01000023
+        else if (DatatypeConverter.printHexBinary(arr).equals("010000F88000013C0100002362E31F1209D000020000010740000037426164437573746F6D53657373696F6E49643B596573576543616E5061737349643B31353431343034383332353134000000011B4000001C65786368616E67652E6578616D706C652E6F726700000108400000113132372E302E302E31000000000001284000002265786368616E6765436C69656E742E6578616D706C652E6F72670000000007CFC00000230001046A492077616E7420746F20676574203320616E73776572730000000760C00000100001046A00000000000000014000001831313131313131313131313131313131000001024000000C01000023")) {
+
+        }
+        // report error
+        else {
+            log.warn(DatatypeConverter.printHexBinary(arr));
+            errorMessagesRecieved++;        
+        }
         messagesRecieved++;
     }
 

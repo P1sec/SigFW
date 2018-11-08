@@ -25,6 +25,7 @@
 package sigfw.tests;
 
 import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -81,6 +82,12 @@ public class Test_SS7Firewall {
         sigfw.resetUnitTestingFlags();
         SccpDataMessage sccpDataMessage = sigfw.sccpStack.getSccpProvider().getMessageFactory().createDataMessageClass0(calledParty, callingParty, hexStringToByteArray("627e4804000000026b432841060700118605010101a036603480020780a109060704000001001d03be232821060704000001010101a016a01480099611111111111111f18107961111111111f16c31a12f0201000201473027a009800711111111111111a10f80008100830084010086008500870083099611111111111111f1"), 0, true, null, null);
         sigfw.onMessage(sccpDataMessage);
+        
+        try {
+            Thread.currentThread().sleep(100);
+        } catch (InterruptedException ex) {
+            Logger.getLogger(Test_SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+        }
         Assert.assertTrue("anyTimeInterrogation message (opCode 71, TCAP Begin) should be blocked by Cat1", !sigfw.unitTestingFlags_sendSccpMessage);
     }
     
@@ -90,6 +97,12 @@ public class Test_SS7Firewall {
         sigfw.resetUnitTestingFlags();
         SccpDataMessage sccpDataMessage = sigfw.sccpStack.getSccpProvider().getMessageFactory().createDataMessageClass0(calledParty, callingParty, hexStringToByteArray("62454804000000536b1a2818060700118605010101a00d600ba1090607040000010026036c21a11f020101020153301730038001010407911111111111118307111111111111f1"), 0, true, null, null);
         sigfw.onMessage(sccpDataMessage);
+        
+        try {
+            Thread.currentThread().sleep(100);
+        } catch (InterruptedException ex) {
+            Logger.getLogger(Test_SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+        }
         Assert.assertTrue("provideSubscriberLocation message (opCode 83, TCAP Begin) should be blocked by Cat1", !sigfw.unitTestingFlags_sendSccpMessage);
     }
     
@@ -99,6 +112,12 @@ public class Test_SS7Firewall {
         sigfw.resetUnitTestingFlags();
         SccpDataMessage sccpDataMessage = sigfw.sccpStack.getSccpProvider().getMessageFactory().createDataMessageClass0(calledParty, callingParty, hexStringToByteArray("6516480433119839490402035ea26c08a106020102020138"), 0, true, null, null);
         sigfw.onMessage(sccpDataMessage);
+        
+        try {
+            Thread.currentThread().sleep(100);
+        } catch (InterruptedException ex) {
+            Logger.getLogger(Test_SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+        }
         Assert.assertTrue("sendAuthenticationInfo message (opCode 56, TCAP Continue) should be allowed", sigfw.unitTestingFlags_sendSccpMessage);
     }
     
@@ -108,6 +127,12 @@ public class Test_SS7Firewall {
         sigfw.resetUnitTestingFlags();
         SccpDataMessage sccpDataMessage = sigfw.sccpStack.getSccpProvider().getMessageFactory().createDataMessageClass0(calledParty, callingParty, hexStringToByteArray("62754804000000016b432841060700118605010101a036603480020780a109060704000001001302be232821060704000001010101a016a01480099611111111111111f18107961111111111f16c28a12602010002013b301e04010f0410aa582ca65ac562b1582c168bc562b1118007911111111111f1"), 0, true, null, null);
         sigfw.onMessage(sccpDataMessage);
+        
+        try {
+            Thread.currentThread().sleep(100);
+        } catch (InterruptedException ex) {
+            Logger.getLogger(Test_SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+        }
         Assert.assertTrue("processUnstructuredSSRequest message (opCode 59, TCAP Begin) should be allowed", sigfw.unitTestingFlags_sendSccpMessage);
     }
     
@@ -117,6 +142,12 @@ public class Test_SS7Firewall {
         sigfw.resetUnitTestingFlags();
         SccpDataMessage sccpDataMessage = sigfw.sccpStack.getSccpProvider().getMessageFactory().createDataMessageClass0(calledParty, callingParty, hexStringToByteArray("623b4804000000036b1a2818060700118605010101a00d600ba1090607040000010002036c17a115020101020103a30d040811111111111111f10a0100"), 0, true, null, null);
         sigfw.onMessage(sccpDataMessage);
+        
+        try {
+            Thread.currentThread().sleep(100);
+        } catch (InterruptedException ex) {
+            Logger.getLogger(Test_SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+        }
         Assert.assertTrue("cancelLocation message (opCode 3, TCAP Begin) should be blocked by Cat2", !sigfw.unitTestingFlags_sendSccpMessage);
     }
     
@@ -126,6 +157,12 @@ public class Test_SS7Firewall {
         sigfw.resetUnitTestingFlags();
         SccpDataMessage sccpDataMessage = sigfw.sccpStack.getSccpProvider().getMessageFactory().createDataMessageClass0(calledParty, callingParty, hexStringToByteArray("623e4804000000466b1a2818060700118605010101a00d600ba109060704000001001c036c1aa1180201010201463010800811111111111111f1a20480008300"), 0, true, null, null);
         sigfw.onMessage(sccpDataMessage);
+        
+        try {
+            Thread.currentThread().sleep(100);
+        } catch (InterruptedException ex) {
+            Logger.getLogger(Test_SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+        }
         Assert.assertTrue("provideSubscriberInfo message (opCode 70, TCAP Begin) should be blocked by Cat2", !sigfw.unitTestingFlags_sendSccpMessage);
     }
     
@@ -135,6 +172,12 @@ public class Test_SS7Firewall {
         sigfw.resetUnitTestingFlags();
         SccpDataMessage sccpDataMessage = sigfw.sccpStack.getSccpProvider().getMessageFactory().createDataMessageClass0(calledParty, callingParty, hexStringToByteArray("625d4804000000046b1a2818060700118605010101a00d600ba1090607040000010003026c39a137020101020104302f800811111111111111f18107111111111111f18207111111111111f1a5080a010104030401a0880791111111111111"), 0, true, null, null);
         sigfw.onMessage(sccpDataMessage);
+        
+        try {
+            Thread.currentThread().sleep(100);
+        } catch (InterruptedException ex) {
+            Logger.getLogger(Test_SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+        }
         Assert.assertTrue("provideRoamingNumber message (opCode 4, TCAP Begin) should be blocked by Cat2", !sigfw.unitTestingFlags_sendSccpMessage);
     }
 

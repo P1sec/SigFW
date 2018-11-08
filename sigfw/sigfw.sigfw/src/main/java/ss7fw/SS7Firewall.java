@@ -283,6 +283,8 @@ import sigfw.connectorMThreat.ConnectorMThreat;
 import sigfw.connectorMThreat.ConnectorMThreatModuleRest;
 import com.p1sec.sigfw.SigFW_interface.FirewallRulesInterface;
 import java.security.interfaces.ECPublicKey;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import javafx.util.Pair;
 import org.mobicents.protocols.sctp.netty.NettySctpManagementImpl;
 import sigfw.common.Crypto;
@@ -297,6 +299,9 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
     private static final ParameterFactoryImpl factory = new ParameterFactoryImpl();
     private static final int NETWORK_INDICATOR = 2;  // used for SCCP router, just used for passive decoding
     private static final int SSN = 0;  // used for MAP stack, just used for passive decoding
+    
+    // Executor Threads
+    ExecutorService threadPool = Executors.newFixedThreadPool(16);
 
     // Unit Tests flags
     public static boolean unitTesting = false;
@@ -456,6 +461,8 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
         
         this.serverM3UAMgmt.setTransportManagement(this.sctpManagement);
         
+        // this.serverM3UAMgmt.setDeliveryMessageThreadCount(16);
+        
         this.serverM3UAMgmt.start();
         this.serverM3UAMgmt.removeAllResourses();
 
@@ -493,6 +500,9 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
         this.clientM3UAMgmt.setPersistDir(persistDir);
         
         this.clientM3UAMgmt.setTransportManagement(this.sctpManagement);
+        
+        // this.clientM3UAMgmt.setDeliveryMessageThreadCount(16);
+        
         this.clientM3UAMgmt.start();
         this.clientM3UAMgmt.removeAllResourses();
 
@@ -963,845 +973,856 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
      * @param message SCCP data message
      */
     @Override
-    public void onMessage(SccpDataMessage message) {
-        logger.debug("[[[[[[[[[[    Sccp Message Recieved      ]]]]]]]]]]");
-        logger.debug(message.toString());
+    public void onMessage(final SccpDataMessage msg) {
+        
+        threadPool.execute(new Runnable() {
+            @Override
+            public void run() { 
+                           
+                logger.debug("[[[[[[[[[[    Sccp Message Recieved      ]]]]]]]]]]");
+                
+                SccpDataMessage message = msg;
+                
+                logger.debug(message.toString());
 
-        int dpc = message.getIncomingDpc();
-        int opc = message.getIncomingOpc();
-        int sls = message.getSls();
-        int ni = message.getNetworkId();
-        
-        Mtp3UserPart mup = this.serverM3UAMgmt;        
-        Mtp3UserPart mupReturn = this.clientM3UAMgmt;
-        
-        
-        // LUA variables
-        HashMap<String, String> lua_hmap = new HashMap<String, String>();
-        lua_hmap.put("sccp_calling_gt", "");
-        lua_hmap.put("sccp_called_gt", "");
-        lua_hmap.put("tcap_oc", "");
-        lua_hmap.put("tcap_ac", "");
-        lua_hmap.put("tcap_tag", "");
-        lua_hmap.put("map_imsi", "");
-        lua_hmap.put("map_msisdn", "");
+                int dpc = message.getIncomingDpc();
+                int opc = message.getIncomingOpc();
+                int sls = message.getSls();
+                int ni = message.getNetworkId();
 
-        for (int i = 0; i < SS7FirewallConfig.m3ua_server_remote_pc.size(); i++) {
-            if (dpc == Integer.parseInt(SS7FirewallConfig.m3ua_server_remote_pc.get(i))) {
-                mup = this.serverM3UAMgmt;
-                mupReturn = this.clientM3UAMgmt;
-                break;
-            }
-        }
-        for (int i = 0; i < SS7FirewallConfig.m3ua_client_remote_pc.size(); i++) {
-            if (dpc == Integer.parseInt(SS7FirewallConfig.m3ua_client_remote_pc.get(i))) {
-                mup = this.clientM3UAMgmt;
-                mupReturn = this.serverM3UAMgmt;
-                break;
-            }
-        }
-        
-        //LongMessageRule lmr = this.sccpStack.getRouter().findLongMessageRule(dpc);
-        LongMessageRule lmr = null;
-        for (Map.Entry<Integer, LongMessageRule> e : this.sccpStack.getRouter().getLongMessageRules().entrySet()) {
-            LongMessageRule rule = e.getValue();
-            if (rule.matches(dpc)) {
-                lmr = rule;
-                break;
-            }
-        }
-        
-        LongMessageRuleType lmrt = LongMessageRuleType.LONG_MESSAGE_FORBBIDEN;
-        if (message.getType() == SccpMessage.MESSAGE_TYPE_XUDT) {
-            lmrt = LongMessageRuleType.XUDT_ENABLED;
-        }
-               
-        // -------------  SCCP firewall -------------
-       
-        // Calling GT whitelist and blacklist
-        if (message.getCallingPartyAddress() != null
-            && message.getCallingPartyAddress().getGlobalTitle() != null) {
-            lua_hmap.put("sccp_calling_gt", message.getCallingPartyAddress().getGlobalTitle().getDigits());
+                Mtp3UserPart mup = SS7Firewall.serverM3UAMgmt;        
+                Mtp3UserPart mupReturn = SS7Firewall.clientM3UAMgmt;
+                
+                // LUA variables
+                HashMap<String, String> lua_hmap = new HashMap<String, String>();
+                lua_hmap.put("sccp_calling_gt", "");
+                lua_hmap.put("sccp_called_gt", "");
+                lua_hmap.put("tcap_oc", "");
+                lua_hmap.put("tcap_ac", "");
+                lua_hmap.put("tcap_tag", "");
+                lua_hmap.put("map_imsi", "");
+                lua_hmap.put("map_msisdn", "");
 
-            if(SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.sccp_calling_gt_whitelist, message.getCallingPartyAddress().getGlobalTitle().getDigits())) {
-                logger.info("============ SCCP Whitelisted Calling GT = " + message.getCallingPartyAddress().getGlobalTitle().getDigits() + " ============");
-                sendSccpMessage(mup, opc, dpc, sls, ni, lmrt, message);
-                return;
-            }
-            
-            //logger.debug("SCCP Calling GT = " + message.getCallingPartyAddress().getGlobalTitle().getDigits());
-            if(SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.sccp_calling_gt_blacklist, message.getCallingPartyAddress().getGlobalTitle().getDigits())) {
-
-                //logger.info("============ SCCP Blocked Calling GT = " + message.getCallingPartyAddress().getGlobalTitle().getDigits() + " ============");
-                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "SCCP FW: Calling GT = " + message.getCallingPartyAddress().getGlobalTitle().getDigits(), lua_hmap);
-                return;
-
-            }
-        }
-        
-        if (message.getCalledPartyAddress() != null) { 
-            if (message.getCalledPartyAddress().getGlobalTitle() != null) {
-                 lua_hmap.put("sccp_called_gt", message.getCalledPartyAddress().getGlobalTitle().getDigits());
-            }
-        }
-        
-        
-        // ------------ TCAP decryption -------------
-        if (message.getType() == SccpDataMessage.MESSAGE_TYPE_XUDT && message.getCalledPartyAddress() != null) { 
-            if (message.getCalledPartyAddress().getGlobalTitle() != null) {
-                KeyPair keyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.called_gt_decryption, message.getCalledPartyAddress().getGlobalTitle().getDigits());
-                if (keyPair != null) {
-                    Pair<SccpDataMessage, String> p = crypto.tcapDecrypt(message, this.sccpMessageFactory, keyPair);
-                    message = p.getKey();
-                    String r = p.getValue();
-                    if (!r.equals("")) {
-                        firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, r, lua_hmap);
-                        return;
+                for (int i = 0; i < SS7FirewallConfig.m3ua_server_remote_pc.size(); i++) {
+                    if (dpc == Integer.parseInt(SS7FirewallConfig.m3ua_server_remote_pc.get(i))) {
+                        mup = SS7Firewall.serverM3UAMgmt;
+                        mupReturn = SS7Firewall.clientM3UAMgmt;
+                        break;
                     }
                 }
-            }
-        }
-        // ------------------------------------------
-        
-        // -------------- TCAP firewall -------------
-        // TCAP
-        byte[] data = message.getData();
-        SccpAddress localAddress = message.getCalledPartyAddress();
-        SccpAddress remoteAddress = message.getCallingPartyAddress();
-        long dialogId = 0;
-        DialogPortion dialogPortion = null;
-        ApplicationContextName ACN = null;
-        Component[] comps = null;
-
-        // asnData - it should pass
-        AsnInputStream ais = new AsnInputStream(data);
-
-        // this should have TC message tag
-        int tag;
-        try {
-            tag = ais.readTag();
-        } catch (IOException ex) {
-            java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-            
-            firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: Missing TC tag", lua_hmap);
-            return;
-        }
-
-        if (ais.getTagClass() != Tag.CLASS_APPLICATION) {
-            //unrecognizedPackageType(message, localAddress, remoteAddress, ais, tag, message.getNetworkId());
-            
-            firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: Unrecognized TC tag", lua_hmap);
-            return;
-        }
-
-        dialogPortion = null;
-        comps = null;
-
-        lua_hmap.put("tcap_tag", new Integer(tag).toString());
-
-        TCContinueMessage tcm = null;
-        TCBeginMessage tcb = null;
-        TCEndMessage teb = null;
-        TCAbortMessage tub = null;
-        TCUniMessage tcuni;
-        
-        switch (tag) {
-        // continue first, usually we will get more of those. small perf
-        // boost
-        case TCContinueMessage._TAG:
-            try {
-                tcm = TcapFactory.createTCContinueMessage(ais);
-            } catch (org.mobicents.protocols.ss7.tcap.asn.ParseException e) {
-                logger.debug("ParseException when parsing TCContinueMessage: " + e.toString(), e);
-                
-                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: ParseException when parsing TCContinueMessage", lua_hmap);
-                return;
-            }
-
-            // TID
-            dialogId = Utils.decodeTransactionId(tcm.getDestinationTransactionId());
-
-            // Application Context
-            dialogPortion = tcm.getDialogPortion();
-
-            // Operation Code
-            comps = tcm.getComponent();
-
-            break;
-
-        case TCBeginMessage._TAG:
-            try {
-                tcb = TcapFactory.createTCBeginMessage(ais);
-            } catch (org.mobicents.protocols.ss7.tcap.asn.ParseException e) {
-                logger.debug("ParseException when parsing TCBeginMessage: " + e.toString(), e);
-                
-                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: ParseException when parsing TCBeginMessage", lua_hmap);
-                return;
-            }
-            if (tcb.getDialogPortion() != null && tcb.getDialogPortion().getDialogAPDU() != null
-                    && tcb.getDialogPortion().getDialogAPDU() instanceof DialogRequestAPDUImpl) {
-                DialogRequestAPDUImpl dlg = (DialogRequestAPDUImpl) tcb.getDialogPortion().getDialogAPDU();
-                if (!dlg.getProtocolVersion().isSupportedVersion()) {
-                    logger.debug("Unsupported protocol version of  has been received when parsing TCBeginMessage");
-                    //this.sendProviderAbort(DialogServiceProviderType.NoCommonDialogPortion, tcb.getOriginatingTransactionId(), remoteAddress, localAddress,
-                    //        message.getSls(), dlg.getApplicationContextName(), message.getNetworkId());
-                    
-                    firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: Unsupported protocol version of  has been received when parsing TCBeginMessage", lua_hmap);
-                    return;
+                for (int i = 0; i < SS7FirewallConfig.m3ua_client_remote_pc.size(); i++) {
+                    if (dpc == Integer.parseInt(SS7FirewallConfig.m3ua_client_remote_pc.get(i))) {
+                        mup = SS7Firewall.clientM3UAMgmt;
+                        mupReturn = SS7Firewall.serverM3UAMgmt;
+                        break;
+                    }
                 }
-            }
 
-            // TID
-            dialogId = Utils.decodeTransactionId(tcb.getOriginatingTransactionId());
+                //LongMessageRule lmr = this.sccpStack.getRouter().findLongMessageRule(dpc);
+                LongMessageRule lmr = null;
+                for (Map.Entry<Integer, LongMessageRule> e : SS7Firewall.sccpStack.getRouter().getLongMessageRules().entrySet()) {
+                    LongMessageRule rule = e.getValue();
+                    if (rule.matches(dpc)) {
+                        lmr = rule;
+                        break;
+                    }
+                }
 
-            // Application Context
-            dialogPortion = tcb.getDialogPortion();
-            
+                LongMessageRuleType lmrt = LongMessageRuleType.LONG_MESSAGE_FORBBIDEN;
+                if (message.getType() == SccpMessage.MESSAGE_TYPE_XUDT) {
+                    lmrt = LongMessageRuleType.XUDT_ENABLED;
+                }
 
-            // Operation Code
-            comps = tcb.getComponent();
+                // -------------  SCCP firewall -------------
 
-            // --------------- TCAP signature ---------------
-            if (comps != null) {
-                if (message.getCallingPartyAddress() != null) { 
-                    if (message.getCallingPartyAddress().getGlobalTitle() != null) {
-                        // --------------- TCAP verify  ---------------
-                        int signature_ok = -1;  // no key
-                        PublicKey publicKey = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.calling_gt_verify, message.getCallingPartyAddress().getGlobalTitle().getDigits());
-                        if (publicKey != null) {
-                            signature_ok = crypto.tcapVerify(message, tcb, comps, publicKey) ;
-                            if (signature_ok == 0) {
-                                // Drop not correctly signed messages
-                                //logger.info("============ Wrong TCAP signature, message blocked. Calling GT = " + message.getCallingPartyAddress().getGlobalTitle().getDigits() + " ============");
+                // Calling GT whitelist and blacklist
+                if (message.getCallingPartyAddress() != null
+                    && message.getCallingPartyAddress().getGlobalTitle() != null) {
+                    lua_hmap.put("sccp_calling_gt", message.getCallingPartyAddress().getGlobalTitle().getDigits());
 
-                                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: Wrong TCAP signature", lua_hmap);
+                    if(SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.sccp_calling_gt_whitelist, message.getCallingPartyAddress().getGlobalTitle().getDigits())) {
+                        logger.info("============ SCCP Whitelisted Calling GT = " + message.getCallingPartyAddress().getGlobalTitle().getDigits() + " ============");
+                        sendSccpMessage(mup, opc, dpc, sls, ni, lmrt, message);
+                        return;
+                    }
+
+                    //logger.debug("SCCP Calling GT = " + message.getCallingPartyAddress().getGlobalTitle().getDigits());
+                    if(SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.sccp_calling_gt_blacklist, message.getCallingPartyAddress().getGlobalTitle().getDigits())) {
+
+                        //logger.info("============ SCCP Blocked Calling GT = " + message.getCallingPartyAddress().getGlobalTitle().getDigits() + " ============");
+                        firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "SCCP FW: Calling GT = " + message.getCallingPartyAddress().getGlobalTitle().getDigits(), lua_hmap);
+                        return;
+
+                    }
+                }
+
+                if (message.getCalledPartyAddress() != null) { 
+                    if (message.getCalledPartyAddress().getGlobalTitle() != null) {
+                         lua_hmap.put("sccp_called_gt", message.getCalledPartyAddress().getGlobalTitle().getDigits());
+                    }
+                }
+
+
+                // ------------ TCAP decryption -------------
+                if (message.getType() == SccpDataMessage.MESSAGE_TYPE_XUDT && message.getCalledPartyAddress() != null) { 
+                    if (message.getCalledPartyAddress().getGlobalTitle() != null) {
+                        KeyPair keyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.called_gt_decryption, message.getCalledPartyAddress().getGlobalTitle().getDigits());
+                        if (keyPair != null) {
+                            Pair<SccpDataMessage, String> p = crypto.tcapDecrypt(message, SS7Firewall.sccpMessageFactory, keyPair);
+                            message = p.getKey();
+                            String r = p.getValue();
+                            if (!r.equals("")) {
+                                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, r, lua_hmap);
                                 return;
                             }
                         }
-                        // --------------------------------------------
                     }
                 }
-            }
-            // ------------------------------------------
+                // ------------------------------------------
 
-            break;
+                // -------------- TCAP firewall -------------
+                // TCAP
+                byte[] data = message.getData();
+                SccpAddress localAddress = message.getCalledPartyAddress();
+                SccpAddress remoteAddress = message.getCallingPartyAddress();
+                long dialogId = 0;
+                DialogPortion dialogPortion = null;
+                ApplicationContextName ACN = null;
+                Component[] comps = null;
 
-        case TCEndMessage._TAG:
-            try {
-                teb = TcapFactory.createTCEndMessage(ais);
-            } catch (org.mobicents.protocols.ss7.tcap.asn.ParseException e) {
-                logger.debug("ParseException when parsing TCEndMessage: " + e.toString(), e);
-                
-                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: ParseException when parsing TCEndMessage", lua_hmap);
-                return;
-            }
+                // asnData - it should pass
+                AsnInputStream ais = new AsnInputStream(data);
 
-            // TID
-            dialogId = Utils.decodeTransactionId(teb.getDestinationTransactionId());
-            
-            // Application Context
-            dialogPortion = teb.getDialogPortion();
-            
-            // Operation Code
-            comps = teb.getComponent();
+                // this should have TC message tag
+                int tag;
+                try {
+                    tag = ais.readTag();
+                } catch (IOException ex) {
+                    java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
 
-            break;
-
-        case TCAbortMessage._TAG:
-            try {
-                tub = TcapFactory.createTCAbortMessage(ais);
-            } catch (org.mobicents.protocols.ss7.tcap.asn.ParseException e) {
-                logger.debug("ParseException when parsing TCAbortMessage: " + e.toString(), e);
-                
-                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: ParseException when parsing TCAbortMessage", lua_hmap);
-                return;
-            }
-
-            // TID
-            dialogId = Utils.decodeTransactionId(tub.getDestinationTransactionId());
-            
-            // Application Context
-            dialogPortion = tub.getDialogPortion();
-
-            break;
-
-        case TCUniMessage._TAG:
-            try {
-                tcuni = TcapFactory.createTCUniMessage(ais);
-            } catch (org.mobicents.protocols.ss7.tcap.asn.ParseException e) {
-                logger.debug("ParseException when parsing TCUniMessage: " + e.toString(), e);
-                
-                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: ParseException when parsing TCUniMessage", lua_hmap);
-                return;
-            }
-            
-            // Application Context
-            dialogPortion = tcuni.getDialogPortion();
-            
-            // Operation Code
-            comps = tcuni.getComponent();
-
-            break;
-
-        default:
-            //unrecognizedPackageType(message, localAddress, remoteAddress, ais, tag, message.getNetworkId());
-            break;
-        }
-
-
-        // Application Context
-        if (dialogPortion != null) {
-            // this should not be null....
-            DialogAPDU apdu = dialogPortion.getDialogAPDU();
-            if (apdu.getType() == DialogAPDUType.Response) {
-               DialogResponseAPDU responseAPDU = (DialogResponseAPDU) apdu;
-               ACN = responseAPDU.getApplicationContextName();
-            } else if (apdu.getType() == DialogAPDUType.Request) {
-               DialogRequestAPDU requestAPDU = (DialogRequestAPDU) apdu;
-               ACN = requestAPDU.getApplicationContextName();
-            }
-            
-            if (ACN != null) {
-                 lua_hmap.put("tcap_ac", ((ApplicationContextNameImpl)ACN).getStringValue());
-            }
-        }
-
-        // ---------- TCAP firewall ----------
-        // TCAP components
-        if (comps != null) {
-            for (Component comp : comps) {
-                if (comp == null) {
-                    continue;
+                    firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: Missing TC tag", lua_hmap);
+                    return;
                 }
-                
-                OperationCodeImpl oc;
-                
-                switch (comp.getType()) {
-                case Invoke:
-                    Invoke inv = (Invoke) comp;
 
-                    // Operation Code
-                    oc = (OperationCodeImpl) inv.getOperationCode();
-                    
-                    // Encryption Autodiscovery Sending Result
-                    // Only targeting HPLMN
-                    if (oc.getLocalOperationCode() == OC_AUTO_ENCRYPTION
-                        && SS7FirewallConfig.encryption_autodiscovery.equals("true")
-                        && SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCalledPartyAddress().getGlobalTitle().getDigits())
-                        && !SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCallingPartyAddress().getGlobalTitle().getDigits())) {
+                if (ais.getTagClass() != Tag.CLASS_APPLICATION) {
+                    //unrecognizedPackageType(message, localAddress, remoteAddress, ais, tag, message.getNetworkId());
 
-                        KeyPair myKeyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.called_gt_decryption, message.getCalledPartyAddress().getGlobalTitle().getDigits());
-                        String key = SS7FirewallConfig.simpleWildcardKeyFind(SS7FirewallConfig.called_gt_decryption, message.getCalledPartyAddress().getGlobalTitle().getDigits());
-                        if (myKeyPair != null) {
+                    firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: Unrecognized TC tag", lua_hmap);
+                    return;
+                }
 
+                dialogPortion = null;
+                comps = null;
 
-                            TCEndMessage t = TcapFactory.createTCEndMessage();
+                lua_hmap.put("tcap_tag", new Integer(tag).toString());
 
-                            
-                            t.setDestinationTransactionId(Utils.encodeTransactionId(dialogId));
-                            // Create Dialog Portion
-                            DialogPortion dp = TcapFactory.createDialogPortion();
+                TCContinueMessage tcm = null;
+                TCBeginMessage tcb = null;
+                TCEndMessage teb = null;
+                TCAbortMessage tub = null;
+                TCUniMessage tcuni;
 
-                            dp.setOid(true);
-                            dp.setOidValue(new long[] { 0, 0, 17, 773, 1, 1, 1 });
+                switch (tag) {
+                // continue first, usually we will get more of those. small perf
+                // boost
+                case TCContinueMessage._TAG:
+                    try {
+                        tcm = TcapFactory.createTCContinueMessage(ais);
+                    } catch (org.mobicents.protocols.ss7.tcap.asn.ParseException e) {
+                        logger.debug("ParseException when parsing TCContinueMessage: " + e.toString(), e);
 
-                            dp.setAsn(true);
-
-                            DialogRequestAPDUImpl diRequestAPDUImpl = new DialogRequestAPDUImpl();
-
-                            diRequestAPDUImpl.setApplicationContextName(ACN);
-                            diRequestAPDUImpl.setDoNotSendProtocolVersion(true);
-
-
-                            dp.setDialogAPDU(diRequestAPDUImpl);
-
-                            t.setDialogPortion(dp);
-
-
-
-                            Component[] c = new Component[1];
-
-                            c[0] = new ReturnResultLastImpl();
-                            ((ReturnResultLastImpl)c[0]).setInvokeId(1l);
-                            
-                            oc.setLocalOperationCode(oc.getLocalOperationCode());
-                            ((ReturnResultLastImpl)c[0]).setOperationCode(oc);
-
-                                                        
-                            // Capabilities
-                            // TODO
-                            Parameter p1 = TcapFactory.createParameter();
-                            p1.setTagClass(Tag.CLASS_PRIVATE);
-                            p1.setPrimitive(true);
-                            p1.setTag(Tag.STRING_OCTET);
-                            p1.setData("Av1".getBytes());
-                            
-                            // GT prefix
-                            Parameter p2 = TcapFactory.createParameter();
-                            p2.setTagClass(Tag.CLASS_PRIVATE);
-                            p2.setPrimitive(true);
-                            p2.setTag(Tag.STRING_OCTET);
-                            byte[] d2 = key.getBytes();
-                            p2.setData(d2);
-                            
-                            // Public key type
-                            String publicKeyType = "";
-                            if (myKeyPair.getPublic() instanceof RSAPublicKey) {
-                                publicKeyType = "RSA";
-                            } else if (myKeyPair.getPublic() instanceof ECPublicKey) {
-                                publicKeyType = "EC";
-                            }
-                            Parameter p3 = TcapFactory.createParameter();
-                            p3.setTagClass(Tag.CLASS_PRIVATE);
-                            p3.setPrimitive(true);
-                            p3.setTag(Tag.STRING_OCTET);
-                            p3.setData(publicKeyType.getBytes());
-                            
-                            // Public key
-                            Parameter p4 = TcapFactory.createParameter();
-                            p4.setTagClass(Tag.CLASS_PRIVATE);
-                            p4.setPrimitive(true);
-                            p4.setTag(Tag.STRING_OCTET);
-                            byte[] d4 = myKeyPair.getPublic().getEncoded();
-                            p4.setData(d4);
-                            
-                            Parameter p = TcapFactory.createParameter();
-                            p.setTagClass(Tag.CLASS_UNIVERSAL);
-                            p.setTag(0x04);
-                            p.setParameters(new Parameter[] { p1, p2, p3, p4});
-                            ((ReturnResultLastImpl)c[0]).setParameter(p);
-
-                           
-
-                            t.setComponent(c);
-                            AsnOutputStream aos = new AsnOutputStream();
-                            try {
-                                t.encode(aos);
-                            } catch (EncodeException ex) {
-                                java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                            }
-
-                            byte[] _d = aos.toByteArray();
-
-                            LongMessageRuleType l = lmrt;
-                            SccpDataMessage m = this.sccpMessageFactory.createDataMessageClass0(message.getCallingPartyAddress(), message.getCalledPartyAddress(), message.getData(), message.getOriginLocalSsn(), false, null, null);
-                            m.setData(_d);
-
-                            logger.info("============ Encryption Autodiscovery Sending Result ============ ");
-                
-                            // Use XUDT if required
-                            if (m.getData().length >= 240) {
-                                l = LongMessageRuleType.XUDT_ENABLED;
-                            }
-                            sendSccpMessage(mupReturn, dpc, opc, sls, ni, l, m);
-                            return;
-                        }
-                        
-                    }
-
-                    // TCAP Cat1 filtering
-                    if (oc != null) {
-                        //logger.debug("TCAP OC = " + oc.getStringValue());
-                        lua_hmap.put("tcap_oc", oc.getStringValue());
-
-                        if(SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.tcap_oc_blacklist, oc.getStringValue())) {
-                            //logger.info("============ TCAP Blocked Operation Code = " + oc.getStringValue() + " ============");
-                            firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW (Cat1): OC = " + oc.getStringValue(), lua_hmap);
-                            return;
-                        }
-                    }
-                    
-                    // Drop if ACN null for TCAP Begin
-                    if (tag == TCBeginMessage._TAG && ACN == null) {
-                        firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW (Cat1): Missing AC", lua_hmap);
+                        firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: ParseException when parsing TCContinueMessage", lua_hmap);
                         return;
                     }
 
-                    // ---------- MAP decoding ----------
-                    String imsi = null;
-                                    
-                    if (oc != null 
-                            && message.getCalledPartyAddress() != null && message.getCalledPartyAddress().getGlobalTitle() != null && message.getCalledPartyAddress().getGlobalTitle().getDigits() != null
-                            && message.getCallingPartyAddress() != null && message.getCallingPartyAddress().getGlobalTitle() != null && message.getCallingPartyAddress().getGlobalTitle().getDigits() != null) {
-                        // Optimization, decode MAP only if towards HPLMN and not originated from HPLMN
-                        if (SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCalledPartyAddress().getGlobalTitle().getDigits())
-                            && !SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCallingPartyAddress().getGlobalTitle().getDigits())) {
+                    // TID
+                    dialogId = Utils.decodeTransactionId(tcm.getDestinationTransactionId());
 
-                            Parameter parameter = inv.getParameter();
-                            if (parameter != null) {
-                                byte[] buf = parameter.getData();
-                                AsnInputStream map_ais = new AsnInputStream(buf);
+                    // Application Context
+                    dialogPortion = tcm.getDialogPortion();
 
-                                // cancelLocation
-                                if (oc.getStringValue().equals("3")) {
-                                    CancelLocationRequestImpl ind = new CancelLocationRequestImpl(MAPApplicationContext.getProtocolVersion(ACN.getOid()));
-                                    try {
-                                        ind.decodeData(map_ais, buf.length);
-                                    } catch (MAPParsingComponentException ex) {
-                                        //java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                                        firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "MAP FW: Failed decoding, OC = " + oc.getStringValue(), lua_hmap);
+                    // Operation Code
+                    comps = tcm.getComponent();
+
+                    break;
+
+                case TCBeginMessage._TAG:
+                    try {
+                        tcb = TcapFactory.createTCBeginMessage(ais);
+                    } catch (org.mobicents.protocols.ss7.tcap.asn.ParseException e) {
+                        logger.debug("ParseException when parsing TCBeginMessage: " + e.toString(), e);
+
+                        firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: ParseException when parsing TCBeginMessage", lua_hmap);
+                        return;
+                    }
+                    if (tcb.getDialogPortion() != null && tcb.getDialogPortion().getDialogAPDU() != null
+                            && tcb.getDialogPortion().getDialogAPDU() instanceof DialogRequestAPDUImpl) {
+                        DialogRequestAPDUImpl dlg = (DialogRequestAPDUImpl) tcb.getDialogPortion().getDialogAPDU();
+                        if (!dlg.getProtocolVersion().isSupportedVersion()) {
+                            logger.debug("Unsupported protocol version of  has been received when parsing TCBeginMessage");
+                            //this.sendProviderAbort(DialogServiceProviderType.NoCommonDialogPortion, tcb.getOriginatingTransactionId(), remoteAddress, localAddress,
+                            //        message.getSls(), dlg.getApplicationContextName(), message.getNetworkId());
+
+                            firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: Unsupported protocol version of  has been received when parsing TCBeginMessage", lua_hmap);
+                            return;
+                        }
+                    }
+
+                    // TID
+                    dialogId = Utils.decodeTransactionId(tcb.getOriginatingTransactionId());
+
+                    // Application Context
+                    dialogPortion = tcb.getDialogPortion();
+
+
+                    // Operation Code
+                    comps = tcb.getComponent();
+
+                    // --------------- TCAP signature ---------------
+                    if (comps != null) {
+                        if (message.getCallingPartyAddress() != null) { 
+                            if (message.getCallingPartyAddress().getGlobalTitle() != null) {
+                                // --------------- TCAP verify  ---------------
+                                int signature_ok = -1;  // no key
+                                PublicKey publicKey = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.calling_gt_verify, message.getCallingPartyAddress().getGlobalTitle().getDigits());
+                                if (publicKey != null) {
+                                    signature_ok = crypto.tcapVerify(message, tcb, comps, publicKey) ;
+                                    if (signature_ok == 0) {
+                                        // Drop not correctly signed messages
+                                        //logger.info("============ Wrong TCAP signature, message blocked. Calling GT = " + message.getCallingPartyAddress().getGlobalTitle().getDigits() + " ============");
+
+                                        firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: Wrong TCAP signature", lua_hmap);
                                         return;
                                     }
-                                    ind.setInvokeId(inv.getInvokeId());
-
-                                    if (((CancelLocationRequestImpl)ind).getImsi() != null) {
-                                        imsi = ((CancelLocationRequestImpl)ind).getImsi().getData();
-                                        logger.debug("MAP CL IMSI = " + imsi);
-                                        lua_hmap.put("map_imsi", imsi);
-                                    }
                                 }
-                                // provideRoamingNumber
-                                if (oc.getStringValue().equals("4")) {
-                                    ProvideRoamingNumberRequestImpl ind = new ProvideRoamingNumberRequestImpl(MAPApplicationContext.getProtocolVersion(ACN.getOid()));
-                                    try {
-                                        ind.decodeData(map_ais, buf.length);
-                                    } catch (MAPParsingComponentException ex) {
-                                        //java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                                        firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "MAP FW: Failed decoding, OC = " + oc.getStringValue(), lua_hmap);
-                                        return;
-                                    }
-                                    ind.setInvokeId(inv.getInvokeId());
-
-                                    if (((ProvideRoamingNumberRequestImpl)ind).getImsi() != null) {
-                                        imsi = ((ProvideRoamingNumberRequestImpl)ind).getImsi().getData();
-                                        logger.debug("MAP PRN IMSI = " + imsi);
-                                        lua_hmap.put("map_imsi", imsi);
-                                    }
-                                }
-                                // insertSubscriberData
-                                if (oc.getStringValue().equals("7")) {
-                                    InsertSubscriberDataRequestImpl ind = new InsertSubscriberDataRequestImpl(MAPApplicationContext.getProtocolVersion(ACN.getOid()));
-                                    try {
-                                        ind.decodeData(map_ais, buf.length);
-                                    } catch (MAPParsingComponentException ex) {
-                                        //java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                                        firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "MAP FW: Failed decoding, OC = " + oc.getStringValue(), lua_hmap);
-                                        return;
-                                    }
-                                    ind.setInvokeId(inv.getInvokeId());
-
-                                    if (((InsertSubscriberDataRequestImpl)ind).getImsi() != null) {
-                                        imsi = ((InsertSubscriberDataRequestImpl)ind).getImsi().getData();
-                                        logger.debug("MAP ISD IMSI = " + imsi);
-                                        lua_hmap.put("map_imsi", imsi);
-                                    }
-                                }
-                                // deleteSubscriberData
-                                if (oc.getStringValue().equals("8")) {
-                                    DeleteSubscriberDataRequestImpl ind = new DeleteSubscriberDataRequestImpl();
-                                    try {
-                                        ind.decodeData(map_ais, buf.length);
-                                    } catch (MAPParsingComponentException ex) {
-                                        //java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                                        firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "MAP FW: Failed decoding, OC = " + oc.getStringValue(), lua_hmap);
-                                        return;
-                                    }
-                                    ind.setInvokeId(inv.getInvokeId());
-
-                                    if (((DeleteSubscriberDataRequestImpl)ind).getImsi() != null) {
-                                        imsi = ((DeleteSubscriberDataRequestImpl)ind).getImsi().getData();
-                                        logger.debug("MAP DSD IMSI = " + imsi);
-                                        lua_hmap.put("map_imsi", imsi);
-                                    }
-                                }
-                                // provideSubscriberInfo
-                                if (oc.getStringValue().equals("70")) {
-                                    ProvideSubscriberInfoRequestImpl ind = new ProvideSubscriberInfoRequestImpl();
-                                    try {
-                                        ind.decodeData(map_ais, buf.length);
-                                    } catch (MAPParsingComponentException ex) {
-                                        //java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-                                        firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "MAP FW: Failed decoding, OC = " + oc.getStringValue(), lua_hmap);
-                                        return;
-                                    }
-                                    ind.setInvokeId(inv.getInvokeId());
-
-                                    if (((ProvideSubscriberInfoRequestImpl)ind).getImsi() != null) {
-                                        imsi = ((ProvideSubscriberInfoRequestImpl)ind).getImsi().getData();
-                                        logger.debug("MAP PSI IMSI = " + imsi);
-                                        lua_hmap.put("map_imsi", imsi);
-                                    }
-                                }
+                                // --------------------------------------------
                             }
                         }
                     }
-                    // ----------------------------------
-                    
-                    // ---------- MAP firewall ----------
-                    // MAP Cat2 filtering
-                    if (oc != null) {
-                        if (SS7FirewallConfig.map_cat2_oc_blacklist.containsKey(oc.getStringValue())) {
-                            // If towards HPLMN and not originated from HPLMN
-                            if (SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCalledPartyAddress().getGlobalTitle().getDigits())
+                    // ------------------------------------------
+
+                    break;
+
+                case TCEndMessage._TAG:
+                    try {
+                        teb = TcapFactory.createTCEndMessage(ais);
+                    } catch (org.mobicents.protocols.ss7.tcap.asn.ParseException e) {
+                        logger.debug("ParseException when parsing TCEndMessage: " + e.toString(), e);
+
+                        firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: ParseException when parsing TCEndMessage", lua_hmap);
+                        return;
+                    }
+
+                    // TID
+                    dialogId = Utils.decodeTransactionId(teb.getDestinationTransactionId());
+
+                    // Application Context
+                    dialogPortion = teb.getDialogPortion();
+
+                    // Operation Code
+                    comps = teb.getComponent();
+
+                    break;
+
+                case TCAbortMessage._TAG:
+                    try {
+                        tub = TcapFactory.createTCAbortMessage(ais);
+                    } catch (org.mobicents.protocols.ss7.tcap.asn.ParseException e) {
+                        logger.debug("ParseException when parsing TCAbortMessage: " + e.toString(), e);
+
+                        firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: ParseException when parsing TCAbortMessage", lua_hmap);
+                        return;
+                    }
+
+                    // TID
+                    dialogId = Utils.decodeTransactionId(tub.getDestinationTransactionId());
+
+                    // Application Context
+                    dialogPortion = tub.getDialogPortion();
+
+                    break;
+
+                case TCUniMessage._TAG:
+                    try {
+                        tcuni = TcapFactory.createTCUniMessage(ais);
+                    } catch (org.mobicents.protocols.ss7.tcap.asn.ParseException e) {
+                        logger.debug("ParseException when parsing TCUniMessage: " + e.toString(), e);
+
+                        firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: ParseException when parsing TCUniMessage", lua_hmap);
+                        return;
+                    }
+
+                    // Application Context
+                    dialogPortion = tcuni.getDialogPortion();
+
+                    // Operation Code
+                    comps = tcuni.getComponent();
+
+                    break;
+
+                default:
+                    //unrecognizedPackageType(message, localAddress, remoteAddress, ais, tag, message.getNetworkId());
+                    break;
+                }
+
+
+                // Application Context
+                if (dialogPortion != null) {
+                    // this should not be null....
+                    DialogAPDU apdu = dialogPortion.getDialogAPDU();
+                    if (apdu.getType() == DialogAPDUType.Response) {
+                       DialogResponseAPDU responseAPDU = (DialogResponseAPDU) apdu;
+                       ACN = responseAPDU.getApplicationContextName();
+                    } else if (apdu.getType() == DialogAPDUType.Request) {
+                       DialogRequestAPDU requestAPDU = (DialogRequestAPDU) apdu;
+                       ACN = requestAPDU.getApplicationContextName();
+                    }
+
+                    if (ACN != null) {
+                         lua_hmap.put("tcap_ac", ((ApplicationContextNameImpl)ACN).getStringValue());
+                    }
+                }
+
+                // ---------- TCAP firewall ----------
+                // TCAP components
+                if (comps != null) {
+                    for (Component comp : comps) {
+                        if (comp == null) {
+                            continue;
+                        }
+
+                        OperationCodeImpl oc;
+
+                        switch (comp.getType()) {
+                        case Invoke:
+                            Invoke inv = (Invoke) comp;
+
+                            // Operation Code
+                            oc = (OperationCodeImpl) inv.getOperationCode();
+
+                            // Encryption Autodiscovery Sending Result
+                            // Only targeting HPLMN
+                            if (oc.getLocalOperationCode() == OC_AUTO_ENCRYPTION
+                                && SS7FirewallConfig.encryption_autodiscovery.equals("true")
+                                && SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCalledPartyAddress().getGlobalTitle().getDigits())
+                                && !SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCallingPartyAddress().getGlobalTitle().getDigits())) {
+
+                                KeyPair myKeyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.called_gt_decryption, message.getCalledPartyAddress().getGlobalTitle().getDigits());
+                                String key = SS7FirewallConfig.simpleWildcardKeyFind(SS7FirewallConfig.called_gt_decryption, message.getCalledPartyAddress().getGlobalTitle().getDigits());
+                                if (myKeyPair != null) {
+
+
+                                    TCEndMessage t = TcapFactory.createTCEndMessage();
+
+
+                                    t.setDestinationTransactionId(Utils.encodeTransactionId(dialogId));
+                                    // Create Dialog Portion
+                                    DialogPortion dp = TcapFactory.createDialogPortion();
+
+                                    dp.setOid(true);
+                                    dp.setOidValue(new long[] { 0, 0, 17, 773, 1, 1, 1 });
+
+                                    dp.setAsn(true);
+
+                                    DialogRequestAPDUImpl diRequestAPDUImpl = new DialogRequestAPDUImpl();
+
+                                    diRequestAPDUImpl.setApplicationContextName(ACN);
+                                    diRequestAPDUImpl.setDoNotSendProtocolVersion(true);
+
+
+                                    dp.setDialogAPDU(diRequestAPDUImpl);
+
+                                    t.setDialogPortion(dp);
+
+
+
+                                    Component[] c = new Component[1];
+
+                                    c[0] = new ReturnResultLastImpl();
+                                    ((ReturnResultLastImpl)c[0]).setInvokeId(1l);
+
+                                    oc.setLocalOperationCode(oc.getLocalOperationCode());
+                                    ((ReturnResultLastImpl)c[0]).setOperationCode(oc);
+
+
+                                    // Capabilities
+                                    // TODO
+                                    Parameter p1 = TcapFactory.createParameter();
+                                    p1.setTagClass(Tag.CLASS_PRIVATE);
+                                    p1.setPrimitive(true);
+                                    p1.setTag(Tag.STRING_OCTET);
+                                    p1.setData("Av1".getBytes());
+
+                                    // GT prefix
+                                    Parameter p2 = TcapFactory.createParameter();
+                                    p2.setTagClass(Tag.CLASS_PRIVATE);
+                                    p2.setPrimitive(true);
+                                    p2.setTag(Tag.STRING_OCTET);
+                                    byte[] d2 = key.getBytes();
+                                    p2.setData(d2);
+
+                                    // Public key type
+                                    String publicKeyType = "";
+                                    if (myKeyPair.getPublic() instanceof RSAPublicKey) {
+                                        publicKeyType = "RSA";
+                                    } else if (myKeyPair.getPublic() instanceof ECPublicKey) {
+                                        publicKeyType = "EC";
+                                    }
+                                    Parameter p3 = TcapFactory.createParameter();
+                                    p3.setTagClass(Tag.CLASS_PRIVATE);
+                                    p3.setPrimitive(true);
+                                    p3.setTag(Tag.STRING_OCTET);
+                                    p3.setData(publicKeyType.getBytes());
+
+                                    // Public key
+                                    Parameter p4 = TcapFactory.createParameter();
+                                    p4.setTagClass(Tag.CLASS_PRIVATE);
+                                    p4.setPrimitive(true);
+                                    p4.setTag(Tag.STRING_OCTET);
+                                    byte[] d4 = myKeyPair.getPublic().getEncoded();
+                                    p4.setData(d4);
+
+                                    Parameter p = TcapFactory.createParameter();
+                                    p.setTagClass(Tag.CLASS_UNIVERSAL);
+                                    p.setTag(0x04);
+                                    p.setParameters(new Parameter[] { p1, p2, p3, p4});
+                                    ((ReturnResultLastImpl)c[0]).setParameter(p);
+
+
+
+                                    t.setComponent(c);
+                                    AsnOutputStream aos = new AsnOutputStream();
+                                    try {
+                                        t.encode(aos);
+                                    } catch (EncodeException ex) {
+                                        java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                                    }
+
+                                    byte[] _d = aos.toByteArray();
+
+                                    LongMessageRuleType l = lmrt;
+                                    SccpDataMessage m = SS7Firewall.sccpMessageFactory.createDataMessageClass0(message.getCallingPartyAddress(), message.getCalledPartyAddress(), message.getData(), message.getOriginLocalSsn(), false, null, null);
+                                    m.setData(_d);
+
+                                    logger.info("============ Encryption Autodiscovery Sending Result ============ ");
+
+                                    // Use XUDT if required
+                                    if (m.getData().length >= 240) {
+                                        l = LongMessageRuleType.XUDT_ENABLED;
+                                    }
+                                    sendSccpMessage(mupReturn, dpc, opc, sls, ni, l, m);
+                                    return;
+                                }
+
+                            }
+
+                            // TCAP Cat1 filtering
+                            if (oc != null) {
+                                //logger.debug("TCAP OC = " + oc.getStringValue());
+                                lua_hmap.put("tcap_oc", oc.getStringValue());
+
+                                if(SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.tcap_oc_blacklist, oc.getStringValue())) {
+                                    //logger.info("============ TCAP Blocked Operation Code = " + oc.getStringValue() + " ============");
+                                    firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW (Cat1): OC = " + oc.getStringValue(), lua_hmap);
+                                    return;
+                                }
+                            }
+
+                            // Drop if ACN null for TCAP Begin
+                            if (tag == TCBeginMessage._TAG && ACN == null) {
+                                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW (Cat1): Missing AC", lua_hmap);
+                                return;
+                            }
+
+                            // ---------- MAP decoding ----------
+                            String imsi = null;
+
+                            if (oc != null 
+                                    && message.getCalledPartyAddress() != null && message.getCalledPartyAddress().getGlobalTitle() != null && message.getCalledPartyAddress().getGlobalTitle().getDigits() != null
+                                    && message.getCallingPartyAddress() != null && message.getCallingPartyAddress().getGlobalTitle() != null && message.getCallingPartyAddress().getGlobalTitle().getDigits() != null) {
+                                // Optimization, decode MAP only if towards HPLMN and not originated from HPLMN
+                                if (SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCalledPartyAddress().getGlobalTitle().getDigits())
                                     && !SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCallingPartyAddress().getGlobalTitle().getDigits())) {
 
-                                // Drop if message targets IMSI in HPLMN
-                                if (imsi != null) {
-                                    // IMSI prefix check
-                                    for (String imsi_prefix: SS7FirewallConfig.hplmn_imsi.keySet()) {
-                                        if (imsi.startsWith(imsi_prefix)) {
-                                            // logger.info("============ MAP Cat2 Blocked Operation Code = " + oc.getStringValue() + " ============");
-                                            firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "MAP FW (Cat2): OC = " + oc.getStringValue(), lua_hmap);
-                                            return;
+                                    Parameter parameter = inv.getParameter();
+                                    if (parameter != null) {
+                                        byte[] buf = parameter.getData();
+                                        AsnInputStream map_ais = new AsnInputStream(buf);
+
+                                        // cancelLocation
+                                        if (oc.getStringValue().equals("3")) {
+                                            CancelLocationRequestImpl ind = new CancelLocationRequestImpl(MAPApplicationContext.getProtocolVersion(ACN.getOid()));
+                                            try {
+                                                ind.decodeData(map_ais, buf.length);
+                                            } catch (MAPParsingComponentException ex) {
+                                                //java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                                                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "MAP FW: Failed decoding, OC = " + oc.getStringValue(), lua_hmap);
+                                                return;
+                                            }
+                                            ind.setInvokeId(inv.getInvokeId());
+
+                                            if (((CancelLocationRequestImpl)ind).getImsi() != null) {
+                                                imsi = ((CancelLocationRequestImpl)ind).getImsi().getData();
+                                                logger.debug("MAP CL IMSI = " + imsi);
+                                                lua_hmap.put("map_imsi", imsi);
+                                            }
+                                        }
+                                        // provideRoamingNumber
+                                        if (oc.getStringValue().equals("4")) {
+                                            ProvideRoamingNumberRequestImpl ind = new ProvideRoamingNumberRequestImpl(MAPApplicationContext.getProtocolVersion(ACN.getOid()));
+                                            try {
+                                                ind.decodeData(map_ais, buf.length);
+                                            } catch (MAPParsingComponentException ex) {
+                                                //java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                                                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "MAP FW: Failed decoding, OC = " + oc.getStringValue(), lua_hmap);
+                                                return;
+                                            }
+                                            ind.setInvokeId(inv.getInvokeId());
+
+                                            if (((ProvideRoamingNumberRequestImpl)ind).getImsi() != null) {
+                                                imsi = ((ProvideRoamingNumberRequestImpl)ind).getImsi().getData();
+                                                logger.debug("MAP PRN IMSI = " + imsi);
+                                                lua_hmap.put("map_imsi", imsi);
+                                            }
+                                        }
+                                        // insertSubscriberData
+                                        if (oc.getStringValue().equals("7")) {
+                                            InsertSubscriberDataRequestImpl ind = new InsertSubscriberDataRequestImpl(MAPApplicationContext.getProtocolVersion(ACN.getOid()));
+                                            try {
+                                                ind.decodeData(map_ais, buf.length);
+                                            } catch (MAPParsingComponentException ex) {
+                                                //java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                                                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "MAP FW: Failed decoding, OC = " + oc.getStringValue(), lua_hmap);
+                                                return;
+                                            }
+                                            ind.setInvokeId(inv.getInvokeId());
+
+                                            if (((InsertSubscriberDataRequestImpl)ind).getImsi() != null) {
+                                                imsi = ((InsertSubscriberDataRequestImpl)ind).getImsi().getData();
+                                                logger.debug("MAP ISD IMSI = " + imsi);
+                                                lua_hmap.put("map_imsi", imsi);
+                                            }
+                                        }
+                                        // deleteSubscriberData
+                                        if (oc.getStringValue().equals("8")) {
+                                            DeleteSubscriberDataRequestImpl ind = new DeleteSubscriberDataRequestImpl();
+                                            try {
+                                                ind.decodeData(map_ais, buf.length);
+                                            } catch (MAPParsingComponentException ex) {
+                                                //java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                                                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "MAP FW: Failed decoding, OC = " + oc.getStringValue(), lua_hmap);
+                                                return;
+                                            }
+                                            ind.setInvokeId(inv.getInvokeId());
+
+                                            if (((DeleteSubscriberDataRequestImpl)ind).getImsi() != null) {
+                                                imsi = ((DeleteSubscriberDataRequestImpl)ind).getImsi().getData();
+                                                logger.debug("MAP DSD IMSI = " + imsi);
+                                                lua_hmap.put("map_imsi", imsi);
+                                            }
+                                        }
+                                        // provideSubscriberInfo
+                                        if (oc.getStringValue().equals("70")) {
+                                            ProvideSubscriberInfoRequestImpl ind = new ProvideSubscriberInfoRequestImpl();
+                                            try {
+                                                ind.decodeData(map_ais, buf.length);
+                                            } catch (MAPParsingComponentException ex) {
+                                                //java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                                                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "MAP FW: Failed decoding, OC = " + oc.getStringValue(), lua_hmap);
+                                                return;
+                                            }
+                                            ind.setInvokeId(inv.getInvokeId());
+
+                                            if (((ProvideSubscriberInfoRequestImpl)ind).getImsi() != null) {
+                                                imsi = ((ProvideSubscriberInfoRequestImpl)ind).getImsi().getData();
+                                                logger.debug("MAP PSI IMSI = " + imsi);
+                                                lua_hmap.put("map_imsi", imsi);
+                                            }
                                         }
                                     }
                                 }
                             }
+                            // ----------------------------------
 
-                        }
-                    }
-                    // ----------------------------------
-                    break;
-                case ReturnResult:
-                    break;
-                case ReturnResultLast:
-                    ReturnResultLast result = (ReturnResultLast) comp;
-                    
-                    // Operation Code
-                    oc = (OperationCodeImpl) result.getOperationCode();
-                    
-                    // Encryption Autodiscovery Receiving Result
-                    // Only targeting HPLMN
-                    
-                    if (oc.getLocalOperationCode() == OC_AUTO_ENCRYPTION
-                        && SS7FirewallConfig.encryption_autodiscovery.equals("true")
-                        && message.getCalledPartyAddress() != null && message.getCalledPartyAddress().getGlobalTitle() != null && message.getCalledPartyAddress().getGlobalTitle().getDigits() != null
-                        && SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCalledPartyAddress().getGlobalTitle().getDigits())
-                        && message.getCallingPartyAddress() != null && message.getCallingPartyAddress().getGlobalTitle() != null && message.getCallingPartyAddress().getGlobalTitle().getDigits() != null
-                        && !SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCallingPartyAddress().getGlobalTitle().getDigits())) {
+                            // ---------- MAP firewall ----------
+                            // MAP Cat2 filtering
+                            if (oc != null) {
+                                if (SS7FirewallConfig.map_cat2_oc_blacklist.containsKey(oc.getStringValue())) {
+                                    // If towards HPLMN and not originated from HPLMN
+                                    if (SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCalledPartyAddress().getGlobalTitle().getDigits())
+                                            && !SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCallingPartyAddress().getGlobalTitle().getDigits())) {
 
-                        logger.info("============ Encryption Autodiscovery Receiving Result ============ ");
-                        
-                        if (encryption_autodiscovery_sessions.containsKey(message.getCallingPartyAddress().getGlobalTitle().getDigits().substring(0, Math.min(encryption_autodiscovery_digits, message.getCallingPartyAddress().getGlobalTitle().getDigits().length())))
-                            && encryption_autodiscovery_sessions.get(message.getCallingPartyAddress().getGlobalTitle().getDigits().substring(0, Math.min(encryption_autodiscovery_digits, message.getCallingPartyAddress().getGlobalTitle().getDigits().length()))) == dialogId) {
+                                        // Drop if message targets IMSI in HPLMN
+                                        if (imsi != null) {
+                                            // IMSI prefix check
+                                            for (String imsi_prefix: SS7FirewallConfig.hplmn_imsi.keySet()) {
+                                                if (imsi.startsWith(imsi_prefix)) {
+                                                    // logger.info("============ MAP Cat2 Blocked Operation Code = " + oc.getStringValue() + " ============");
+                                                    firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "MAP FW (Cat2): OC = " + oc.getStringValue(), lua_hmap);
+                                                    return;
+                                                }
+                                            }
+                                        }
+                                    }
 
-                            // do not remove the key and wait for expiration to not send too many autodiscovery request messages
-                            //encryption_autodiscovery_sessions.remove(message.getCallingPartyAddress().getGlobalTitle().getDigits().substring(0, Math.min(encryption_autodiscovery_digits, message.getCallingPartyAddress().getGlobalTitle().getDigits().length())));                          
-                            
-                            Parameter p = result.getParameter();
-                            Parameter[] params = p.getParameters();
-                            if (params != null && params.length >= 2) {
-                                
-                                // Capabilities
-                                // TODO
-                                Parameter p1 = params[0];
-                                
-                                // GT prefix
-                                Parameter p2 = params[1];
-                                byte[] d2 = p2.getData();
-                                String called_gt = new String(d2);
-
-                                // Public key type
-                                Parameter p3 = params[2];
-                                byte[] d3 = p3.getData();
-                                String publicKeyType = new String(d3);                       
-                                
-                                // Public key
-                                Parameter p4 = params[3];
-                                byte[] d4 = p4.getData();
-                                // TODO add method into config to add public key
-                                byte[] publicKeyBytes =  d4;
-                                try {
-                                    X509EncodedKeySpec pubKeySpec = new X509EncodedKeySpec(publicKeyBytes);
-                                    PublicKey publicKey;
-                                    publicKey = keyFactoryRSA.generatePublic(pubKeySpec);
-                                    SS7FirewallConfig.called_gt_encryption.put(called_gt, publicKey);
-                                } catch (InvalidKeySpecException ex) {
-                                    java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
                                 }
-                                
                             }
-                            
-                        }
-                        
-                        // do not forward message
-                        return;
-                    }      
-                    
-                    
-                    
-                    break;
-                case ReturnError:
-                    ReturnError re = (ReturnError) comp;
-                    ErrorCodeImpl ec = (ErrorCodeImpl) re.getErrorCode();
-                    if (ec != null) {
-                    }
-                    break;
-                case Reject:
-                    Reject rej = (Reject) comp;
-                    if (!rej.isLocalOriginated()) {
-                        ProblemImpl prob = (ProblemImpl) rej.getProblem();
-                        if (prob != null) {
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-        
-        // -------------- Externel Firewall rules -----------------
-        if (externalFirewallRules.ss7FirewallRules(message) == false) {
-            firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "SS7 FW: Match with Externel Firewall rules", lua_hmap);
-            return;
-        }
-        
-        // -------------- LUA rules -----------------
-        ScriptEngineManager mgr = new ScriptEngineManager();
-	ScriptEngine eng = mgr.getEngineByName("luaj");
-        for (String key : lua_hmap.keySet()) {
-            eng.put(key, lua_hmap.get(key));
-        }
+                            // ----------------------------------
+                            break;
+                        case ReturnResult:
+                            break;
+                        case ReturnResultLast:
+                            ReturnResultLast result = (ReturnResultLast) comp;
 
-        boolean lua_match = false;
-        int i;
-        for (i = 0; i < SS7FirewallConfig.lua_blacklist_rules.size(); i++) {
-            try {
-                eng.eval("y = " + (String)SS7FirewallConfig.lua_blacklist_rules.get(i));
-                boolean r =  Boolean.valueOf(eng.get("y").toString());
-                lua_match |= r;
-                if (r) {
-                    //logger.debug("============ LUA rules blacklist: " + SS7FirewallConfig.lua_blacklist_rules.get(i) + " ============");
-                    //logger.debug("============ LUA variables ============");
-                    //for (String key : lua_hmap.keySet()) {
-                    //    logger.debug(key + ": " + lua_hmap.get(key));
-                    //}
-                    break;
+                            // Operation Code
+                            oc = (OperationCodeImpl) result.getOperationCode();
+
+                            // Encryption Autodiscovery Receiving Result
+                            // Only targeting HPLMN
+
+                            if (oc.getLocalOperationCode() == OC_AUTO_ENCRYPTION
+                                && SS7FirewallConfig.encryption_autodiscovery.equals("true")
+                                && message.getCalledPartyAddress() != null && message.getCalledPartyAddress().getGlobalTitle() != null && message.getCalledPartyAddress().getGlobalTitle().getDigits() != null
+                                && SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCalledPartyAddress().getGlobalTitle().getDigits())
+                                && message.getCallingPartyAddress() != null && message.getCallingPartyAddress().getGlobalTitle() != null && message.getCallingPartyAddress().getGlobalTitle().getDigits() != null
+                                && !SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCallingPartyAddress().getGlobalTitle().getDigits())) {
+
+                                logger.info("============ Encryption Autodiscovery Receiving Result ============ ");
+
+                                if (encryption_autodiscovery_sessions.containsKey(message.getCallingPartyAddress().getGlobalTitle().getDigits().substring(0, Math.min(encryption_autodiscovery_digits, message.getCallingPartyAddress().getGlobalTitle().getDigits().length())))
+                                    && encryption_autodiscovery_sessions.get(message.getCallingPartyAddress().getGlobalTitle().getDigits().substring(0, Math.min(encryption_autodiscovery_digits, message.getCallingPartyAddress().getGlobalTitle().getDigits().length()))) == dialogId) {
+
+                                    // do not remove the key and wait for expiration to not send too many autodiscovery request messages
+                                    //encryption_autodiscovery_sessions.remove(message.getCallingPartyAddress().getGlobalTitle().getDigits().substring(0, Math.min(encryption_autodiscovery_digits, message.getCallingPartyAddress().getGlobalTitle().getDigits().length())));                          
+
+                                    Parameter p = result.getParameter();
+                                    Parameter[] params = p.getParameters();
+                                    if (params != null && params.length >= 2) {
+
+                                        // Capabilities
+                                        // TODO
+                                        Parameter p1 = params[0];
+
+                                        // GT prefix
+                                        Parameter p2 = params[1];
+                                        byte[] d2 = p2.getData();
+                                        String called_gt = new String(d2);
+
+                                        // Public key type
+                                        Parameter p3 = params[2];
+                                        byte[] d3 = p3.getData();
+                                        String publicKeyType = new String(d3);                       
+
+                                        // Public key
+                                        Parameter p4 = params[3];
+                                        byte[] d4 = p4.getData();
+                                        // TODO add method into config to add public key
+                                        byte[] publicKeyBytes =  d4;
+                                        try {
+                                            X509EncodedKeySpec pubKeySpec = new X509EncodedKeySpec(publicKeyBytes);
+                                            PublicKey publicKey;
+                                            publicKey = keyFactoryRSA.generatePublic(pubKeySpec);
+                                            SS7FirewallConfig.called_gt_encryption.put(called_gt, publicKey);
+                                        } catch (InvalidKeySpecException ex) {
+                                            java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                                        }
+
+                                    }
+
+                                }
+
+                                // do not forward message
+                                return;
+                            }      
+
+
+
+                            break;
+                        case ReturnError:
+                            ReturnError re = (ReturnError) comp;
+                            ErrorCodeImpl ec = (ErrorCodeImpl) re.getErrorCode();
+                            if (ec != null) {
+                            }
+                            break;
+                        case Reject:
+                            Reject rej = (Reject) comp;
+                            if (!rej.isLocalOriginated()) {
+                                ProblemImpl prob = (ProblemImpl) rej.getProblem();
+                                if (prob != null) {
+                                }
+                            }
+                            break;
+                        }
+                    }
                 }
-            } catch (ScriptException ex) {
-                java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-            }
-        }
-        if (lua_match) {
-            firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "MAP FW:  Match with Lua rule " + i, lua_hmap);
-            return;
-        }
-        // ------------------------------------------
-        
-        // ------------- IDS API rules ---------------
-        if (connectorIDS != null) {
-            EncodingResultData erd;
-            try {
-                erd = ((SccpMessageImpl)message).encode(this.sccpStack, lmrt, mup.getMaxUserDataLength(dpc), logger, this.sccpStack.isRemoveSpc(),
-                        this.sccpStack.getSccpProtocolVersion());
-                if(connectorIDS.evalSCCPMessage(DatatypeConverter.printHexBinary(erd.getSolidData())) == false) {
-                    firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "MAP FW:  Blocked by IDS", lua_hmap);
+
+                // -------------- Externel Firewall rules -----------------
+                if (externalFirewallRules.ss7FirewallRules(message) == false) {
+                    firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "SS7 FW: Match with Externel Firewall rules", lua_hmap);
                     return;
                 }
-            } catch (ParseException ex) {
-                java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
-            }
-        }
-        // ------------------------------------------
-        
-        // --------------- TCAP signing ---------------
-        if (tag == TCBeginMessage._TAG) {
-            KeyPair keyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.calling_gt_signing, message.getCallingPartyAddress().getGlobalTitle().getDigits());
-            if (keyPair != null) {
-                lmrt = crypto.tcapSign(message, tcb, comps, lmrt, keyPair);
-            }
-        }
-        // --------------------------------------------
-        
-        // ------------ TCAP encryption -------------
-        if (message.getCalledPartyAddress() != null) { 
-            if (message.getCalledPartyAddress().getGlobalTitle() != null) {
-                PublicKey publicKey = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.called_gt_encryption, message.getCalledPartyAddress().getGlobalTitle().getDigits());
-                if (publicKey != null) {
-                    Pair<SccpDataMessage, LongMessageRuleType> p = crypto.tcapEncrypt(message, sccpMessageFactory, publicKey, lmrt);
-                    message = p.getKey();
-                    lmrt = p.getValue();
+
+                // -------------- LUA rules -----------------
+                ScriptEngineManager mgr = new ScriptEngineManager();
+                ScriptEngine eng = mgr.getEngineByName("luaj");
+                for (String key : lua_hmap.keySet()) {
+                    eng.put(key, lua_hmap.get(key));
                 }
-                // ------------ Encryption Autodiscovery ------------ 
-                // only if not towards HPLMN
-                else if (SS7FirewallConfig.encryption_autodiscovery.equals("true")
-                        && tag == TCBeginMessage._TAG
-                        && !SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCalledPartyAddress().getGlobalTitle().getDigits())
-                        && SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCallingPartyAddress().getGlobalTitle().getDigits())) {
-                    
-                    if (!encryption_autodiscovery_sessions.containsKey(message.getCalledPartyAddress().getGlobalTitle().getDigits().substring(0, Math.min(encryption_autodiscovery_digits, message.getCallingPartyAddress().getGlobalTitle().getDigits().length())))) {
-                        logger.debug("============ Preparing Autodiscovery Invoke ============ ");
 
-                        TCBeginMessage t = TcapFactory.createTCBeginMessage();
-
-
-                        byte[] otid = { (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256) };
-                        t.setOriginatingTransactionId(otid);
-                        // Create Dialog Portion
-                        DialogPortion dp = TcapFactory.createDialogPortion();
-
-                        dp.setOid(true);
-                        dp.setOidValue(new long[] { 0, 0, 17, 773, 1, 1, 1 });
-
-                        dp.setAsn(true);
-
-                        DialogRequestAPDUImpl diRequestAPDUImpl = new DialogRequestAPDUImpl();
-
-                        // TODO change Application Context
-                        ApplicationContextNameImpl acn = new ApplicationContextNameImpl();
-                        acn.setOid(new long[] { 0, 4, 0, 0, 1, 0, 19, 2 });
-
-                        diRequestAPDUImpl.setApplicationContextName(acn);
-                        diRequestAPDUImpl.setDoNotSendProtocolVersion(true);
-
-                        dp.setDialogAPDU(diRequestAPDUImpl);
-
-                        t.setDialogPortion(dp);
-
-                        Component[] c = new Component[1];
-
-                        c[0] = new InvokeImpl();
-                        ((InvokeImpl)c[0]).setInvokeId(1l);
-                        OperationCode oc = TcapFactory.createOperationCode();
-                        oc.setLocalOperationCode(OC_AUTO_ENCRYPTION);
-                        ((InvokeImpl)c[0]).setOperationCode(oc);
-
-
-                        t.setComponent(c);
-                        AsnOutputStream aos = new AsnOutputStream();
-                        try {
-                            t.encode(aos);
-                        } catch (EncodeException ex) {
-                            java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                boolean lua_match = false;
+                int i;
+                for (i = 0; i < SS7FirewallConfig.lua_blacklist_rules.size(); i++) {
+                    try {
+                        eng.eval("y = " + (String)SS7FirewallConfig.lua_blacklist_rules.get(i));
+                        boolean r =  Boolean.valueOf(eng.get("y").toString());
+                        lua_match |= r;
+                        if (r) {
+                            //logger.debug("============ LUA rules blacklist: " + SS7FirewallConfig.lua_blacklist_rules.get(i) + " ============");
+                            //logger.debug("============ LUA variables ============");
+                            //for (String key : lua_hmap.keySet()) {
+                            //    logger.debug(key + ": " + lua_hmap.get(key));
+                            //}
+                            break;
                         }
-
-                        byte[] _d = aos.toByteArray();
-                        
-                        LongMessageRuleType l = lmrt;
-                        SccpDataMessage m = this.sccpMessageFactory.createDataMessageClass0(message.getCalledPartyAddress(), message.getCallingPartyAddress(), message.getData(), message.getOriginLocalSsn(), false, null, null);
-                        m.setData(_d);
-
-                        // --------- Add also TCAP signature ------------
-                        KeyPair keyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.calling_gt_signing, message.getCallingPartyAddress().getGlobalTitle().getDigits());
-                        if (keyPair != null) {
-                            lmrt = crypto.tcapSign(m, t, c, lmrt, keyPair);
-                        }
-                        // ----------------------------------------------
-                        
-                        logger.info("============ Sending Autodiscovery Invoke ============ ");
-                        
-                        // Use XUDT if required
-                        if (m.getData().length >= 240) {
-                            l = LongMessageRuleType.XUDT_ENABLED;
-                        }
-                        sendSccpMessage(mup, opc, dpc, sls, ni, l, m);
-                        encryption_autodiscovery_sessions.put(message.getCalledPartyAddress().getGlobalTitle().getDigits().substring(0, Math.min(encryption_autodiscovery_digits, message.getCallingPartyAddress().getGlobalTitle().getDigits().length())), Utils.decodeTransactionId(otid));
-
+                    } catch (ScriptException ex) {
+                        java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
                     }
-                    // ---------- Encryption Autodiscovery End ---------- 
                 }
+                if (lua_match) {
+                    firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "MAP FW:  Match with Lua rule " + i, lua_hmap);
+                    return;
+                }
+                // ------------------------------------------
+
+                // ------------- IDS API rules ---------------
+                if (connectorIDS != null) {
+                    EncodingResultData erd;
+                    try {
+                        erd = ((SccpMessageImpl)message).encode(SS7Firewall.sccpStack, lmrt, mup.getMaxUserDataLength(dpc), logger, SS7Firewall.sccpStack.isRemoveSpc(),
+                                SS7Firewall.sccpStack.getSccpProtocolVersion());
+                        if(connectorIDS.evalSCCPMessage(DatatypeConverter.printHexBinary(erd.getSolidData())) == false) {
+                            firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "MAP FW:  Blocked by IDS", lua_hmap);
+                            return;
+                        }
+                    } catch (ParseException ex) {
+                        java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                    }
+                }
+                // ------------------------------------------
+
+                // --------------- TCAP signing ---------------
+                if (tag == TCBeginMessage._TAG) {
+                    KeyPair keyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.calling_gt_signing, message.getCallingPartyAddress().getGlobalTitle().getDigits());
+                    if (keyPair != null) {
+                        lmrt = crypto.tcapSign(message, tcb, comps, lmrt, keyPair);
+                    }
+                }
+                // --------------------------------------------
+
+                // ------------ TCAP encryption -------------
+                if (message.getCalledPartyAddress() != null) { 
+                    if (message.getCalledPartyAddress().getGlobalTitle() != null) {
+                        PublicKey publicKey = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.called_gt_encryption, message.getCalledPartyAddress().getGlobalTitle().getDigits());
+                        if (publicKey != null) {
+                            Pair<SccpDataMessage, LongMessageRuleType> p = crypto.tcapEncrypt(message, sccpMessageFactory, publicKey, lmrt);
+                            message = p.getKey();
+                            lmrt = p.getValue();
+                        }
+                        // ------------ Encryption Autodiscovery ------------ 
+                        // only if not towards HPLMN
+                        else if (SS7FirewallConfig.encryption_autodiscovery.equals("true")
+                                && tag == TCBeginMessage._TAG
+                                && !SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCalledPartyAddress().getGlobalTitle().getDigits())
+                                && SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCallingPartyAddress().getGlobalTitle().getDigits())) {
+
+                            if (!encryption_autodiscovery_sessions.containsKey(message.getCalledPartyAddress().getGlobalTitle().getDigits().substring(0, Math.min(encryption_autodiscovery_digits, message.getCallingPartyAddress().getGlobalTitle().getDigits().length())))) {
+                                logger.debug("============ Preparing Autodiscovery Invoke ============ ");
+
+                                TCBeginMessage t = TcapFactory.createTCBeginMessage();
+
+
+                                byte[] otid = { (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256) };
+
+                                // to this as soon as possible to prevent concurrent threads to duplicate the autodiscovery
+                                encryption_autodiscovery_sessions.put(message.getCalledPartyAddress().getGlobalTitle().getDigits().substring(0, Math.min(encryption_autodiscovery_digits, message.getCallingPartyAddress().getGlobalTitle().getDigits().length())), Utils.decodeTransactionId(otid));
+
+                                t.setOriginatingTransactionId(otid);
+                                // Create Dialog Portion
+                                DialogPortion dp = TcapFactory.createDialogPortion();
+
+                                dp.setOid(true);
+                                dp.setOidValue(new long[] { 0, 0, 17, 773, 1, 1, 1 });
+
+                                dp.setAsn(true);
+
+                                DialogRequestAPDUImpl diRequestAPDUImpl = new DialogRequestAPDUImpl();
+
+                                // TODO change Application Context
+                                ApplicationContextNameImpl acn = new ApplicationContextNameImpl();
+                                acn.setOid(new long[] { 0, 4, 0, 0, 1, 0, 19, 2 });
+
+                                diRequestAPDUImpl.setApplicationContextName(acn);
+                                diRequestAPDUImpl.setDoNotSendProtocolVersion(true);
+
+                                dp.setDialogAPDU(diRequestAPDUImpl);
+
+                                t.setDialogPortion(dp);
+
+                                Component[] c = new Component[1];
+
+                                c[0] = new InvokeImpl();
+                                ((InvokeImpl)c[0]).setInvokeId(1l);
+                                OperationCode oc = TcapFactory.createOperationCode();
+                                oc.setLocalOperationCode(OC_AUTO_ENCRYPTION);
+                                ((InvokeImpl)c[0]).setOperationCode(oc);
+
+
+                                t.setComponent(c);
+                                AsnOutputStream aos = new AsnOutputStream();
+                                try {
+                                    t.encode(aos);
+                                } catch (EncodeException ex) {
+                                    java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                                }
+
+                                byte[] _d = aos.toByteArray();
+
+                                LongMessageRuleType l = lmrt;
+                                SccpDataMessage m = SS7Firewall.sccpMessageFactory.createDataMessageClass0(message.getCalledPartyAddress(), message.getCallingPartyAddress(), message.getData(), message.getOriginLocalSsn(), false, null, null);
+                                m.setData(_d);
+
+                                // --------- Add also TCAP signature ------------
+                                KeyPair keyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.calling_gt_signing, message.getCallingPartyAddress().getGlobalTitle().getDigits());
+                                if (keyPair != null) {
+                                    lmrt = crypto.tcapSign(m, t, c, lmrt, keyPair);
+                                }
+                                // ----------------------------------------------
+
+                                logger.info("============ Sending Autodiscovery Invoke ============ ");
+
+                                // Use XUDT if required
+                                if (m.getData().length >= 240) {
+                                    l = LongMessageRuleType.XUDT_ENABLED;
+                                }
+                                sendSccpMessage(mup, opc, dpc, sls, ni, l, m);
+
+                            }
+                            // ---------- Encryption Autodiscovery End ---------- 
+                        }
+                    }
+                }
+                // ------------------------------------------
+
+                logger.debug("============ Forwarding Message ============ ");
+                // Use XUDT if required
+                if (message.getData().length >= 240) {
+                    lmrt = LongMessageRuleType.XUDT_ENABLED;
+                    SccpDataMessage m = SS7Firewall.sccpMessageFactory.createDataMessageClass0(message.getCalledPartyAddress(), message.getCallingPartyAddress(), message.getData(), message.getOriginLocalSsn(), false, null, null);
+                    message = m;
+                }
+                sendSccpMessage(mup, opc, dpc, sls, ni, lmrt, message);
             }
-        }
-        // ------------------------------------------
-        
-        logger.debug("============ Forwarding Message ============ ");
-        // Use XUDT if required
-        if (message.getData().length >= 240) {
-            lmrt = LongMessageRuleType.XUDT_ENABLED;
-            SccpDataMessage m = this.sccpMessageFactory.createDataMessageClass0(message.getCalledPartyAddress(), message.getCallingPartyAddress(), message.getData(), message.getOriginLocalSsn(), false, null, null);
-            message = m;
-        }
-        sendSccpMessage(mup, opc, dpc, sls, ni, lmrt, message);
-        
+        });
     }
     
     /**

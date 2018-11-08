@@ -109,6 +109,8 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.security.interfaces.ECPublicKey;
 import com.p1sec.sigfw.SigFW_interface.FirewallRulesInterface;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.mobicents.protocols.sctp.netty.NettyAssociationImpl;
 import org.mobicents.protocols.sctp.netty.NettySctpManagementImpl;
 import sigfw.common.Crypto;
@@ -141,6 +143,8 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
     private AvpDictionary dictionary = AvpDictionary.INSTANCE;
     private Stack stack;
 
+    // Executor Threads
+    ExecutorService threadPool = Executors.newFixedThreadPool(16);
 
     // ////////////////////////////////////////
     // Objects which will be used in action //
@@ -163,7 +167,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
     private static Map<Association, Integer> sctpAssciationsMaxOutboundStreams = new HashMap<Association, Integer>();
     
     // Diameter
-    public final MessageParser parser = new MessageParser();
+    public static final MessageParser parser = new MessageParser();
     
     static private String configName = "diameterfw.json";
 
@@ -949,467 +953,476 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
     }
     
 
-    public void onPayload(Association asctn, PayloadData pd) {
-        //throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-        logger.debug("[[[[[[[[[[    onPayload      ]]]]]]]]]]");
+    public void onPayload(final Association asctn, final PayloadData pd) {
         
-        // LUA variables
-        HashMap<String, String> lua_hmap = new HashMap<String, String>();
-        lua_hmap.put("diameter_orig_host", "");
-        lua_hmap.put("diameter_orig_realm", "");
-        lua_hmap.put("diameter_dest_host", "");
-        lua_hmap.put("diameter_dest_realm", "");
-        lua_hmap.put("diameter_cc", "");    // command code
-        lua_hmap.put("diameter_ai", "");    // application id
-        lua_hmap.put("diameter_imsi", "");
-        lua_hmap.put("diameter_msisdn", "");
+        threadPool.execute(new Runnable() {
+            @Override
+            public void run() {                  
         
-        ByteBuffer buf = ByteBuffer.wrap(pd.getData());
+                //throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+                logger.debug("[[[[[[[[[[    onPayload      ]]]]]]]]]]");
 
-        
-        // Diameter firewall / filtering
-        try {
-            Message msg = this.parser.createMessage(buf);
-            
-            //logger.debug("Message = " + msg.getAvps().toString());
-            
-            // Parse Values
-            long ai = msg.getApplicationId();
-            lua_hmap.put("diameter_ai", Long.toString(ai));
-            
-            int cc = msg.getCommandCode();
-            lua_hmap.put("diameter_cc", Integer.toString(cc));
-            
-            String dest_realm = "";
-            Avp avp = msg.getAvps().getAvp(Avp.DESTINATION_REALM);
-            if (avp != null && avp.getDiameterURI() != null && avp.getDiameterURI().getFQDN() != null) {
-                dest_realm = avp.getDiameterURI().getFQDN();
-            }
-            lua_hmap.put("diameter_dest_realm", dest_realm);
-            
-            String dest_host = "";
-            avp = msg.getAvps().getAvp(Avp.DESTINATION_HOST);
-            if (avp != null && avp.getDiameterURI() != null && avp.getDiameterURI().getFQDN() != null) {
-                dest_host = avp.getDiameterURI().getFQDN();
-            }
-            lua_hmap.put("diameter_dest_host", dest_host);
-            
-            String orig_realm = "";
-            avp = msg.getAvps().getAvp(Avp.ORIGIN_REALM);
-            if (avp != null && avp.getDiameterURI() != null && avp.getDiameterURI().getFQDN() != null) {
-                orig_realm = avp.getDiameterURI().getFQDN();
-            }
-            lua_hmap.put("diameter_orig_realm", orig_realm);
-            
-            String orig_host = "";
-            avp = msg.getAvps().getAvp(Avp.ORIGIN_HOST);
-            if (avp != null && avp.getDiameterURI() != null && avp.getDiameterURI().getFQDN() != null) {
-                orig_host = avp.getDiameterURI().getFQDN();
-            }
-            lua_hmap.put("diameter_orig_host", orig_host);
-            
-            String imsi = "";
-            avp = msg.getAvps().getAvp(Avp.USER_NAME);
-            if (avp != null && avp.getUTF8String() != null) {
-                imsi = avp.getUTF8String() ;
-            }
-            lua_hmap.put("diameter_imsi", imsi);
-            
-            String msisdn = "";
-            avp = msg.getAvps().getAvp(1400 /*Subscription-Data in ULA on S6a*/);
-            if (avp != null && avp.getGrouped() != null && avp.getGrouped().getAvp(Avp.MSISDN) != null) {
-                msisdn = avp.getGrouped().getAvp(Avp.MSISDN).getUTF8String() ;
-            }
-            lua_hmap.put("diameter_msisdn", msisdn);
-            
-            // ------ Request/Answer correlation --------
-            // Store the Diameter session, to be able encrypt also answers. Store Origin Realm from Request
-            if (!dest_realm.equals("") && msg.isRequest()) {
-                String session_id = ai + ":" + cc + ":" + dest_realm + ":" + msg.getEndToEndIdentifier() + ":" + msg.getHopByHopIdentifier();
-                diameter_sessions.put(session_id, orig_realm);
-            }
-            // ------------------------------------------
-            
-            // ----------- Pass CER, DWR, DPR -----------
-            if (cc == 257 || cc == 280 || cc == 282) {           
-                sendDiameterMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, true, lua_hmap);
-                return;
-            }
-            // ------------------------------------------
-            
-            // ---------- Diameter decryption -----------
-            // Diameter Decryption
-            // Requests containing Dest-Realm
-            if (!dest_realm.equals("") && msg.isRequest()) { 
-                if (DiameterFirewallConfig.destination_realm_decryption.containsKey(dest_realm)) {
-                    KeyPair keyPair = DiameterFirewallConfig.destination_realm_decryption.get(dest_realm);
-                    
-                    // decrypt
-                    String r = crypto.diameterDecrypt(msg, keyPair);
-                    if (!r.equals("")) {
-                        firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, r, lua_hmap);
+                // LUA variables
+                HashMap<String, String> lua_hmap = new HashMap<String, String>();
+                lua_hmap.put("diameter_orig_host", "");
+                lua_hmap.put("diameter_orig_realm", "");
+                lua_hmap.put("diameter_dest_host", "");
+                lua_hmap.put("diameter_dest_realm", "");
+                lua_hmap.put("diameter_cc", "");    // command code
+                lua_hmap.put("diameter_ai", "");    // application id
+                lua_hmap.put("diameter_imsi", "");
+                lua_hmap.put("diameter_msisdn", "");
+
+                ByteBuffer buf = ByteBuffer.wrap(pd.getData());
+
+
+                // Diameter firewall / filtering
+                try {
+                    Message msg = DiameterFirewall.parser.createMessage(buf);
+
+                    //logger.debug("Message = " + msg.getAvps().toString());
+
+                    // Parse Values
+                    long ai = msg.getApplicationId();
+                    lua_hmap.put("diameter_ai", Long.toString(ai));
+
+                    int cc = msg.getCommandCode();
+                    lua_hmap.put("diameter_cc", Integer.toString(cc));
+
+                    String dest_realm = "";
+                    Avp avp = msg.getAvps().getAvp(Avp.DESTINATION_REALM);
+                    if (avp != null && avp.getDiameterURI() != null && avp.getDiameterURI().getFQDN() != null) {
+                        dest_realm = avp.getDiameterURI().getFQDN();
+                    }
+                    lua_hmap.put("diameter_dest_realm", dest_realm);
+
+                    String dest_host = "";
+                    avp = msg.getAvps().getAvp(Avp.DESTINATION_HOST);
+                    if (avp != null && avp.getDiameterURI() != null && avp.getDiameterURI().getFQDN() != null) {
+                        dest_host = avp.getDiameterURI().getFQDN();
+                    }
+                    lua_hmap.put("diameter_dest_host", dest_host);
+
+                    String orig_realm = "";
+                    avp = msg.getAvps().getAvp(Avp.ORIGIN_REALM);
+                    if (avp != null && avp.getDiameterURI() != null && avp.getDiameterURI().getFQDN() != null) {
+                        orig_realm = avp.getDiameterURI().getFQDN();
+                    }
+                    lua_hmap.put("diameter_orig_realm", orig_realm);
+
+                    String orig_host = "";
+                    avp = msg.getAvps().getAvp(Avp.ORIGIN_HOST);
+                    if (avp != null && avp.getDiameterURI() != null && avp.getDiameterURI().getFQDN() != null) {
+                        orig_host = avp.getDiameterURI().getFQDN();
+                    }
+                    lua_hmap.put("diameter_orig_host", orig_host);
+
+                    String imsi = "";
+                    avp = msg.getAvps().getAvp(Avp.USER_NAME);
+                    if (avp != null && avp.getUTF8String() != null) {
+                        imsi = avp.getUTF8String() ;
+                    }
+                    lua_hmap.put("diameter_imsi", imsi);
+
+                    String msisdn = "";
+                    avp = msg.getAvps().getAvp(1400 /*Subscription-Data in ULA on S6a*/);
+                    if (avp != null && avp.getGrouped() != null && avp.getGrouped().getAvp(Avp.MSISDN) != null) {
+                        msisdn = avp.getGrouped().getAvp(Avp.MSISDN).getUTF8String() ;
+                    }
+                    lua_hmap.put("diameter_msisdn", msisdn);
+
+                    // ------ Request/Answer correlation --------
+                    // Store the Diameter session, to be able encrypt also answers. Store Origin Realm from Request
+                    if (!dest_realm.equals("") && msg.isRequest()) {
+                        String session_id = ai + ":" + cc + ":" + dest_realm + ":" + msg.getEndToEndIdentifier() + ":" + msg.getHopByHopIdentifier();
+                        diameter_sessions.put(session_id, orig_realm);
+                    }
+                    // ------------------------------------------
+
+                    // ----------- Pass CER, DWR, DPR -----------
+                    if (cc == 257 || cc == 280 || cc == 282) {           
+                        sendDiameterMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, true, lua_hmap);
                         return;
                     }
-                }
-            }
-            // Answers without Dest-Realm, but seen previously Request
-            else if (!msg.isRequest()) {
-                String _dest_realm = "";
-                String session_id = ai + ":" + cc + ":" + orig_realm + ":" + msg.getEndToEndIdentifier() + ":" + msg.getHopByHopIdentifier();
-                if (diameter_sessions.containsKey(session_id)) {
-                    _dest_realm = diameter_sessions.get(session_id);
-                }
-                if (DiameterFirewallConfig.destination_realm_decryption.containsKey(_dest_realm)) {
-                    KeyPair keyPair = DiameterFirewallConfig.destination_realm_decryption.get(_dest_realm);
-                    logger.debug("Diameter Decryption of Answer for Destination Realm = " + _dest_realm);
+                    // ------------------------------------------
 
-                    // decrypt
-                    String r = crypto.diameterDecrypt(msg, keyPair);
-                    if (!r.equals("")) {
-                        firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, r, lua_hmap);
+                    // ---------- Diameter decryption -----------
+                    // Diameter Decryption
+                    // Requests containing Dest-Realm
+                    if (!dest_realm.equals("") && msg.isRequest()) { 
+                        if (DiameterFirewallConfig.destination_realm_decryption.containsKey(dest_realm)) {
+                            KeyPair keyPair = DiameterFirewallConfig.destination_realm_decryption.get(dest_realm);
+
+                            // decrypt
+                            String r = crypto.diameterDecrypt(msg, keyPair);
+                            if (!r.equals("")) {
+                                firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, r, lua_hmap);
+                                return;
+                            }
+                        }
+                    }
+                    // Answers without Dest-Realm, but seen previously Request
+                    else if (!msg.isRequest()) {
+                        String _dest_realm = "";
+                        String session_id = ai + ":" + cc + ":" + orig_realm + ":" + msg.getEndToEndIdentifier() + ":" + msg.getHopByHopIdentifier();
+                        if (diameter_sessions.containsKey(session_id)) {
+                            _dest_realm = diameter_sessions.get(session_id);
+                        }
+                        if (DiameterFirewallConfig.destination_realm_decryption.containsKey(_dest_realm)) {
+                            KeyPair keyPair = DiameterFirewallConfig.destination_realm_decryption.get(_dest_realm);
+                            logger.debug("Diameter Decryption of Answer for Destination Realm = " + _dest_realm);
+
+                            // decrypt
+                            String r = crypto.diameterDecrypt(msg, keyPair);
+                            if (!r.equals("")) {
+                                firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, r, lua_hmap);
+                                return;
+                            }
+
+                            diameter_sessions.remove(session_id);
+                        }
+                    }           
+                    // ------------------------------------------
+
+
+                    // Diameter firewall / filtering
+
+                    // TODO Origin Host whitelist
+                    // TODO Origin Realm whitelist
+
+                    if(!DiameterFirewallConfig.check_diameter_application_id_whitelist(Long.toString(ai))) {
+                        firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "DIAMETER FW: Blocked Application ID = " + ai, lua_hmap);
                         return;
                     }
-                    
-                    diameter_sessions.remove(session_id);
-                }
-            }           
-            // ------------------------------------------
-            
-            
-            // Diameter firewall / filtering
-            
-            // TODO Origin Host whitelist
-            // TODO Origin Realm whitelist
-            
-            if(!DiameterFirewallConfig.check_diameter_application_id_whitelist(Long.toString(ai))) {
-                firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "DIAMETER FW: Blocked Application ID = " + ai, lua_hmap);
-                return;
-            }
-            
-            if(DiameterFirewallConfig.check_diameter_command_code_blacklist(Integer.toString(cc))) {
-                firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "DIAMETER FW: Blocked Command Code = " + cc, lua_hmap);
-                return;
-            }
-            
-            
-            avp = msg.getAvps().getAvp(Avp.ORIGIN_HOST);
-            if (avp != null) {
-                logger.debug("Origin Host = " + avp.getDiameterURI().getFQDN());
-            }
-            avp = msg.getAvps().getAvp(Avp.ORIGIN_REALM);
-            if (avp != null) {
-                logger.debug("Origin Realm = " + avp.getDiameterURI().getFQDN());
-                if(DiameterFirewallConfig.check_diameter_origin_realm_blacklist(avp.getDiameterURI().getFQDN())) {
-                    firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "DIAMETER FW: Blocked Origin Realm = " + avp.getDiameterURI().getFQDN(), lua_hmap);
-                    return;
-                }
-            }
-            
-            // Diameter Cat2
-            if (msg.isRequest()) {
-                if (DiameterFirewallConfig.diameter_cat2_command_code_blacklist.containsKey(Integer.toString(cc))) {
-                    // If towards HPLMN and not originated from HPLMN
-                    if (DiameterFirewallConfig.hplmn_realms.containsKey(dest_realm)
-                            && !DiameterFirewallConfig.hplmn_realms.containsKey(orig_realm)) {
 
-                        // Drop if message targets IMSI in HPLMN
-                        if (imsi != null) {
-                            // IMSI prefix check
-                            for (String imsi_prefix: DiameterFirewallConfig.hplmn_imsi.keySet()) {
-                                if (imsi.startsWith(imsi_prefix)) {
-                                    // logger.info("============ Diameter Cat2 Blocked Command Code = " + cc" ============");
-                                    firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "DIAMETER FW (Cat2): Blocked targeting home IMSI", lua_hmap);
-                                    return;
+                    if(DiameterFirewallConfig.check_diameter_command_code_blacklist(Integer.toString(cc))) {
+                        firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "DIAMETER FW: Blocked Command Code = " + cc, lua_hmap);
+                        return;
+                    }
+
+
+                    avp = msg.getAvps().getAvp(Avp.ORIGIN_HOST);
+                    if (avp != null) {
+                        logger.debug("Origin Host = " + avp.getDiameterURI().getFQDN());
+                    }
+                    avp = msg.getAvps().getAvp(Avp.ORIGIN_REALM);
+                    if (avp != null) {
+                        logger.debug("Origin Realm = " + avp.getDiameterURI().getFQDN());
+                        if(DiameterFirewallConfig.check_diameter_origin_realm_blacklist(avp.getDiameterURI().getFQDN())) {
+                            firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "DIAMETER FW: Blocked Origin Realm = " + avp.getDiameterURI().getFQDN(), lua_hmap);
+                            return;
+                        }
+                    }
+
+                    // Diameter Cat2
+                    if (msg.isRequest()) {
+                        if (DiameterFirewallConfig.diameter_cat2_command_code_blacklist.containsKey(Integer.toString(cc))) {
+                            // If towards HPLMN and not originated from HPLMN
+                            if (DiameterFirewallConfig.hplmn_realms.containsKey(dest_realm)
+                                    && !DiameterFirewallConfig.hplmn_realms.containsKey(orig_realm)) {
+
+                                // Drop if message targets IMSI in HPLMN
+                                if (imsi != null) {
+                                    // IMSI prefix check
+                                    for (String imsi_prefix: DiameterFirewallConfig.hplmn_imsi.keySet()) {
+                                        if (imsi.startsWith(imsi_prefix)) {
+                                            // logger.info("============ Diameter Cat2 Blocked Command Code = " + cc" ============");
+                                            firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "DIAMETER FW (Cat2): Blocked targeting home IMSI", lua_hmap);
+                                            return;
+                                        }
+                                    }
                                 }
                             }
+
                         }
                     }
-
-                }
-            }
-            // -------------- Externel Firewall rules -----------------
-            if (externalFirewallRules.diameterFirewallRules(asctn, pd) == false) {
-                firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "DIAMETER FW: Match with Externel Firewall rules", lua_hmap);
-                return;
-            }
-            
-            // -------------- LUA rules -----------------
-            ScriptEngineManager mgr = new ScriptEngineManager();
-            ScriptEngine eng = mgr.getEngineByName("luaj");
-            for (String key : lua_hmap.keySet()) {
-                eng.put(key, lua_hmap.get(key));
-            }
-
-            boolean lua_match = false;
-            int i;
-            for (i = 0; i < DiameterFirewallConfig.lua_blacklist_rules.size(); i++) {
-                try {
-                    eng.eval("y = " + (String)DiameterFirewallConfig.lua_blacklist_rules.get(i));
-                    boolean r =  Boolean.valueOf(eng.get("y").toString());
-                    lua_match |= r;
-                    if (r) {
-                        //logger.debug("============ LUA rules blacklist: " + DiameterFirewallConfig.lua_blacklist_rules.get(i) + " ============");
-                        //logger.debug("============ LUA variables ============");
-                        //for (String key : lua_hmap.keySet()) {
-                        //    logger.debug(key + ": " + lua_hmap.get(key));
-                        //}
-                        break;
-                    }
-                } catch (ScriptException ex) {
-                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            }
-            if (lua_match) {
-                firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "DIAMETER FW: Match with Lua rule " + i, lua_hmap);
-                return;
-            }
-            // ------------------------------------------
-            
-            // ------------- IDS API rules ---------------
-            if (connectorIDS != null) {
-                try {
-                    if(connectorIDS.evalDiameterMessage(DatatypeConverter.printHexBinary(pd.getData())) == false) {
-                        firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "DIAMETER FW: Blocked by IDS " + i, lua_hmap);
+                    // -------------- Externel Firewall rules -----------------
+                    if (externalFirewallRules.diameterFirewallRules(asctn, pd) == false) {
+                        firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "DIAMETER FW: Match with Externel Firewall rules", lua_hmap);
                         return;
                     }
-                } catch (Exception ex) {
-                    // TODO
-                }
-            }
-            // ------------------------------------------       
-            
-            // Encryption Autodiscovery Sending Result
-            // Only targeting HPLMN
-            if (cc == CC_AUTO_ENCRYPTION
-                && DiameterFirewallConfig.encryption_autodiscovery.equals("true")
-                && msg.isRequest()
-                && DiameterFirewallConfig.hplmn_realms.containsKey(dest_realm)
-                && !DiameterFirewallConfig.hplmn_realms.containsKey(orig_realm)
-                        ) {
-                
-                if (DiameterFirewallConfig.destination_realm_decryption.containsKey(dest_realm)) {
-                    KeyPair myKeyPair = DiameterFirewallConfig.destination_realm_decryption.get(dest_realm);
-                    if (myKeyPair != null) {
-                        Answer answer = ((IMessage)(msg)).createAnswer(ResultCode.SUCCESS);
-                        
-                        // Capabilities
-                        // TODO
-                        answer.getAvps().addAvp(AVP_AUTO_ENCRYPTION_CAPABILITIES, "Av1".getBytes());
 
-                        // Realm
-                        answer.getAvps().addAvp(AVP_AUTO_ENCRYPTION_REALM, dest_realm.getBytes());
+                    // -------------- LUA rules -----------------
+                    ScriptEngineManager mgr = new ScriptEngineManager();
+                    ScriptEngine eng = mgr.getEngineByName("luaj");
+                    for (String key : lua_hmap.keySet()) {
+                        eng.put(key, lua_hmap.get(key));
+                    }
 
-                        // Public key type
-                        String publicKeyType = "";
-                        if (myKeyPair.getPublic() instanceof RSAPublicKey) {
-                            publicKeyType = "RSA";
-                        } else if (myKeyPair.getPublic() instanceof ECPublicKey) {
-                            publicKeyType = "EC";
-                        }
-                        answer.getAvps().addAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY_TYPE, publicKeyType.getBytes());
-                        
-                        // Public key
-                        answer.getAvps().addAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY,myKeyPair.getPublic().getEncoded());
-                        
-                        logger.info("============ Encryption Autodiscovery Sending Result ============ ");
-                        
-                        sendDiameterMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), answer, false, lua_hmap);
-                        return;
-                    }
-                }
-            }
-            
-            // Encryption Autodiscovery Receiving Result
-            // Only targeting HPLMN
-            if (cc == CC_AUTO_ENCRYPTION
-                && DiameterFirewallConfig.encryption_autodiscovery.equals("true")
-                && !msg.isRequest()
-                // Answer does not contain currently realms
-                //&& DiameterFirewallConfig.hplmn_realms.containsKey(dest_realm)
-                //&& !DiameterFirewallConfig.hplmn_realms.containsKey(orig_realm)
-               ) {
-                
-                logger.info("============ Encryption Autodiscovery Receiving Result ============ ");
-                logger.debug("encryption_autodiscovery_sessions.containsKey " + new Long(msg.getEndToEndIdentifier()).toString());
-                if (encryption_autodiscovery_sessions.containsKey(msg.getEndToEndIdentifier())
-                 // Answer does not contain currently realms
-                 //&& encryption_autodiscovery_sessions.get(msg.getEndToEndIdentifier()).equals(origin_realm)
-                 && msg.getAvps() != null) {
-                    logger.debug("Processing Autodiscovery Result");
-                    
-                    // Capabilities
-                    // TODO
-                    
-                    // Realm prefix
-                    String realm = "";
-                    if (msg.getAvps().getAvp(AVP_AUTO_ENCRYPTION_REALM) != null) {
-                        byte[] d2 = msg.getAvps().getAvp(AVP_AUTO_ENCRYPTION_REALM).getOctetString();
-                        realm = new String(d2);
-                    }
-                    
-                    // Public key type
-                    String publicKeyType = "RSA";
-                    if (msg.getAvps().getAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY_TYPE) != null) {
-                        byte[] d3 = msg.getAvps().getAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY_TYPE).getOctetString();
-                        
-                        publicKeyType = new String(d3);                       
-                    }
-                    
-                    // Public key
-                    if (msg.getAvps().getAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY) != null) {
-                        byte[] d4 = msg.getAvps().getAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY).getOctetString();
-                        // TODO add method into config to add public key
-                        byte[] publicKeyBytes =  d4;
+                    boolean lua_match = false;
+                    int i;
+                    for (i = 0; i < DiameterFirewallConfig.lua_blacklist_rules.size(); i++) {
                         try {
-                            X509EncodedKeySpec pubKeySpec = new X509EncodedKeySpec(publicKeyBytes);
-                            PublicKey publicKey = null;
-                            
-                            if (publicKeyType.equals("RSA")) {
-                                publicKey = keyFactoryRSA.generatePublic(pubKeySpec);
-                            } else if (publicKeyType.equals("EC")) {
-                                publicKey = keyFactoryEC.generatePublic(pubKeySpec);
+                            eng.eval("y = " + (String)DiameterFirewallConfig.lua_blacklist_rules.get(i));
+                            boolean r =  Boolean.valueOf(eng.get("y").toString());
+                            lua_match |= r;
+                            if (r) {
+                                //logger.debug("============ LUA rules blacklist: " + DiameterFirewallConfig.lua_blacklist_rules.get(i) + " ============");
+                                //logger.debug("============ LUA variables ============");
+                                //for (String key : lua_hmap.keySet()) {
+                                //    logger.debug(key + ": " + lua_hmap.get(key));
+                                //}
+                                break;
                             }
-                            logger.debug("Adding public key for realm = " + realm);
-                            DiameterFirewallConfig.destination_realm_encryption.put(realm, publicKey);
-                        } catch (InvalidKeySpecException ex) {
+                        } catch (ScriptException ex) {
                             java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
                         }
                     }
-                }
-                
-                // do not forward message
-                return;
-            }
-            
-            // --------------- Diameter signature ---------------
-            // Sign only Requests containing Orig-Realm
-            if (!orig_realm.equals("") && msg.isRequest()) {
-                // ------------- Diameter verify --------------
-                if (DiameterFirewallConfig.origin_realm_verify.containsKey(orig_realm)) {
-                    PublicKey publicKey = DiameterFirewallConfig.origin_realm_verify.get(orig_realm);
-                    String r = crypto.diameterVerify(msg, publicKey);
-                    if (!r.equals("")) {
-                        firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, r, lua_hmap);
+                    if (lua_match) {
+                        firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "DIAMETER FW: Match with Lua rule " + i, lua_hmap);
                         return;
                     }
-                } 
-                // No key to verify signature
-                else {
-                    // TODO could initiate key autodiscovery
-                }
-                // --------------------------------------------
-                // ------------- Diameter signing -------------
-                if (DiameterFirewallConfig.origin_realm_signing.containsKey(orig_realm)) {
-                    KeyPair keyPair = DiameterFirewallConfig.origin_realm_signing.get(orig_realm);
-                    crypto.diameterSign(msg, keyPair);
-                }
-                // --------------------------------------------
-            }
-            // ------------------------------------------
-            
+                    // ------------------------------------------
+
+                    // ------------- IDS API rules ---------------
+                    if (connectorIDS != null) {
+                        try {
+                            if(connectorIDS.evalDiameterMessage(DatatypeConverter.printHexBinary(pd.getData())) == false) {
+                                firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "DIAMETER FW: Blocked by IDS " + i, lua_hmap);
+                                return;
+                            }
+                        } catch (Exception ex) {
+                            // TODO
+                        }
+                    }
+                    // ------------------------------------------       
+
+                    // Encryption Autodiscovery Sending Result
+                    // Only targeting HPLMN
+                    if (cc == CC_AUTO_ENCRYPTION
+                        && DiameterFirewallConfig.encryption_autodiscovery.equals("true")
+                        && msg.isRequest()
+                        && DiameterFirewallConfig.hplmn_realms.containsKey(dest_realm)
+                        && !DiameterFirewallConfig.hplmn_realms.containsKey(orig_realm)
+                                ) {
+
+                        if (DiameterFirewallConfig.destination_realm_decryption.containsKey(dest_realm)) {
+                            KeyPair myKeyPair = DiameterFirewallConfig.destination_realm_decryption.get(dest_realm);
+                            if (myKeyPair != null) {
+                                Answer answer = ((IMessage)(msg)).createAnswer(ResultCode.SUCCESS);
+
+                                // Capabilities
+                                // TODO
+                                answer.getAvps().addAvp(AVP_AUTO_ENCRYPTION_CAPABILITIES, "Av1".getBytes());
+
+                                // Realm
+                                answer.getAvps().addAvp(AVP_AUTO_ENCRYPTION_REALM, dest_realm.getBytes());
+
+                                // Public key type
+                                String publicKeyType = "";
+                                if (myKeyPair.getPublic() instanceof RSAPublicKey) {
+                                    publicKeyType = "RSA";
+                                } else if (myKeyPair.getPublic() instanceof ECPublicKey) {
+                                    publicKeyType = "EC";
+                                }
+                                answer.getAvps().addAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY_TYPE, publicKeyType.getBytes());
+
+                                // Public key
+                                answer.getAvps().addAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY,myKeyPair.getPublic().getEncoded());
+
+                                logger.info("============ Encryption Autodiscovery Sending Result ============ ");
+
+                                sendDiameterMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), answer, false, lua_hmap);
+                                return;
+                            }
+                        }
+                    }
+
+                    // Encryption Autodiscovery Receiving Result
+                    // Only targeting HPLMN
+                    if (cc == CC_AUTO_ENCRYPTION
+                        && DiameterFirewallConfig.encryption_autodiscovery.equals("true")
+                        && !msg.isRequest()
+                        // Answer does not contain currently realms
+                        //&& DiameterFirewallConfig.hplmn_realms.containsKey(dest_realm)
+                        //&& !DiameterFirewallConfig.hplmn_realms.containsKey(orig_realm)
+                       ) {
+
+                        logger.info("============ Encryption Autodiscovery Receiving Result ============ ");
+                        logger.debug("encryption_autodiscovery_sessions.containsKey " + new Long(msg.getEndToEndIdentifier()).toString());
+                        if (encryption_autodiscovery_sessions.containsKey(msg.getEndToEndIdentifier())
+                         // Answer does not contain currently realms
+                         //&& encryption_autodiscovery_sessions.get(msg.getEndToEndIdentifier()).equals(origin_realm)
+                         && msg.getAvps() != null) {
+                            logger.debug("Processing Autodiscovery Result");
+
+                            // Capabilities
+                            // TODO
+
+                            // Realm prefix
+                            String realm = "";
+                            if (msg.getAvps().getAvp(AVP_AUTO_ENCRYPTION_REALM) != null) {
+                                byte[] d2 = msg.getAvps().getAvp(AVP_AUTO_ENCRYPTION_REALM).getOctetString();
+                                realm = new String(d2);
+                            }
+
+                            // Public key type
+                            String publicKeyType = "RSA";
+                            if (msg.getAvps().getAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY_TYPE) != null) {
+                                byte[] d3 = msg.getAvps().getAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY_TYPE).getOctetString();
+
+                                publicKeyType = new String(d3);                       
+                            }
+
+                            // Public key
+                            if (msg.getAvps().getAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY) != null) {
+                                byte[] d4 = msg.getAvps().getAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY).getOctetString();
+                                // TODO add method into config to add public key
+                                byte[] publicKeyBytes =  d4;
+                                try {
+                                    X509EncodedKeySpec pubKeySpec = new X509EncodedKeySpec(publicKeyBytes);
+                                    PublicKey publicKey = null;
+
+                                    if (publicKeyType.equals("RSA")) {
+                                        publicKey = keyFactoryRSA.generatePublic(pubKeySpec);
+                                    } else if (publicKeyType.equals("EC")) {
+                                        publicKey = keyFactoryEC.generatePublic(pubKeySpec);
+                                    }
+                                    logger.debug("Adding public key for realm = " + realm);
+                                    DiameterFirewallConfig.destination_realm_encryption.put(realm, publicKey);
+                                } catch (InvalidKeySpecException ex) {
+                                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+                                }
+                            }
+                        }
+
+                        // do not forward message
+                        return;
+                    }
+
+                    // --------------- Diameter signature ---------------
+                    // Sign only Requests containing Orig-Realm
+                    if (!orig_realm.equals("") && msg.isRequest()) {
+                        // ------------- Diameter verify --------------
+                        if (DiameterFirewallConfig.origin_realm_verify.containsKey(orig_realm)) {
+                            PublicKey publicKey = DiameterFirewallConfig.origin_realm_verify.get(orig_realm);
+                            String r = crypto.diameterVerify(msg, publicKey);
+                            if (!r.equals("")) {
+                                firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, r, lua_hmap);
+                                return;
+                            }
+                        } 
+                        // No key to verify signature
+                        else {
+                            // TODO could initiate key autodiscovery
+                        }
+                        // --------------------------------------------
+                        // ------------- Diameter signing -------------
+                        if (DiameterFirewallConfig.origin_realm_signing.containsKey(orig_realm)) {
+                            KeyPair keyPair = DiameterFirewallConfig.origin_realm_signing.get(orig_realm);
+                            crypto.diameterSign(msg, keyPair);
+                        }
+                        // --------------------------------------------
+                    }
+                    // ------------------------------------------
+
+
+                    // ---------- Diameter encryption -----------
+                    String session_id = ai + ":" +  cc + ":" +  orig_realm + ":" + msg.getEndToEndIdentifier() + ":" + msg.getHopByHopIdentifier();
+
+                    // Requests containing Dest-Realm
+                    if (!dest_realm.equals("") && msg.isRequest() && DiameterFirewallConfig.destination_realm_encryption.containsKey(dest_realm)) { 
+                        PublicKey publicKey = DiameterFirewallConfig.destination_realm_encryption.get(dest_realm);
+                        logger.debug("Diameter Encryption of Request for Destination Realm = " + dest_realm);
+
+                        // encrypt
+                        // diameterEncrypt(msg, publicKey);
+                        // changed to v2 to use encrypted grouped AVP
+                        crypto.diameterEncrypt_v2(msg, publicKey);
+                    }
+                    // Answers without Dest-Realm, but seen previous Request
+                    else if (!msg.isRequest()
+                            && diameter_sessions.containsKey(session_id) 
+                            && DiameterFirewallConfig.destination_realm_encryption.containsKey(diameter_sessions.get(session_id))
+                      ) {
+                        String _dest_realm = diameter_sessions.get(session_id);
+
+                        PublicKey publicKey = DiameterFirewallConfig.destination_realm_encryption.get(_dest_realm);
+                        logger.debug("Diameter Encryption of Answer for Destination Realm = " + _dest_realm);
+
+                        // encrypt
+                        // diameterEncrypt(msg, publicKey);
+                        // changed to v2 to use encrypted grouped AVP
+                        crypto.diameterEncrypt_v2(msg, publicKey);
+
+                        diameter_sessions.remove(session_id);
+
+                    }
+                    // ------------ Encryption Autodiscovery ------------ 
+                    else if (DiameterFirewallConfig.encryption_autodiscovery.equals("true")
+                            &&
+                            // If not encrypted Requests towards non HPLMN
+                            ((msg.isRequest()
+                            && !DiameterFirewallConfig.hplmn_realms.containsKey(dest_realm)
+                            && DiameterFirewallConfig.hplmn_realms.containsKey(orig_realm)) ||
+                            // In not encrypted Answers towards non HPLMN
+                            (!msg.isRequest()
+                            && diameter_sessions.containsKey(session_id))
+                            && !DiameterFirewallConfig.hplmn_realms.containsKey(diameter_sessions.get(session_id)))
+                     ) {
+                        String _dest_realm = dest_realm;
+                        if(!msg.isRequest()) {
+                            _dest_realm = diameter_sessions.get(session_id);
+                        }
+
+                        if (!encryption_autodiscovery_sessions_reverse.containsKey(_dest_realm)) {
+
+                            IMessage message = parser.createEmptyMessage((IMessage)msg, CC_AUTO_ENCRYPTION);
+
+                            // Workaround. E2E ID long value should be clamp to 32bit before use. It is clamped in proto encoding. 
+                            // See jDiamter MessageParser.java, Line 111. long endToEndId = ((long) in.readInt() << 32) >>> 32;
+                            long e2e_id = ((long) message.getEndToEndIdentifier() << 32) >>> 32;
+                            message.setEndToEndIdentifier(e2e_id);
+                            //
+
+                            // to this as soon as possible to prevent concurrent threads to duplicate the autodiscovery
+                            logger.debug("encryption_autodiscovery_sessions.put " + message.getEndToEndIdentifier() + " " + _dest_realm);
+                            encryption_autodiscovery_sessions.put(message.getEndToEndIdentifier(), _dest_realm);
+                            logger.debug("encryption_autodiscovery_sessions_reverse.put " + _dest_realm + " " + message.getEndToEndIdentifier());
+                            encryption_autodiscovery_sessions_reverse.put(_dest_realm, message.getEndToEndIdentifier());
+
+                            if(!msg.isRequest()) {
+                                message.setRequest(true);
+                                // TODO usa raw AVP encoding, because aaa:// is added by jDiameter
+                                message.getAvps().addAvp(Avp.DESTINATION_REALM, _dest_realm, true, false, true);
+                            }
+
+                            message.setHeaderApplicationId(16777251);
+
+                            avp = msg.getAvps().getAvp(Avp.ORIGIN_REALM);
+                            if (avp != null) {
+                                message.getAvps().addAvp(avp);
+                            }
+
+                            // --------- Add also Diameter signature ------------
+                            if (DiameterFirewallConfig.origin_realm_signing.containsKey(orig_realm)) {
+                                KeyPair keyPair = DiameterFirewallConfig.origin_realm_signing.get(orig_realm);
+                                crypto.diameterSign(message, keyPair);
+                            }
+                            // --------------------------------------------------
+
+                            logger.info("============ Sending Autodiscovery Request ============ ");
+
+                            sendDiameterMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), message, true, lua_hmap);
+                        }
+                    }
+                    // -------------------------------------------------
+
+                    sendDiameterMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, true, lua_hmap);
+
+                } catch (AvpDataException ex) {
+                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+                } catch (InvalidKeyException ex) {
+                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+                }/* catch (URISyntaxException ex) {
+                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+                } catch (UnknownServiceException ex) {
+                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+                }*/
         
-            // ---------- Diameter encryption -----------
-            String session_id = ai + ":" +  cc + ":" +  orig_realm + ":" + msg.getEndToEndIdentifier() + ":" + msg.getHopByHopIdentifier();
-
-            // Requests containing Dest-Realm
-            if (!dest_realm.equals("") && msg.isRequest() && DiameterFirewallConfig.destination_realm_encryption.containsKey(dest_realm)) { 
-                PublicKey publicKey = DiameterFirewallConfig.destination_realm_encryption.get(dest_realm);
-                logger.debug("Diameter Encryption of Request for Destination Realm = " + dest_realm);
-
-                // encrypt
-                // diameterEncrypt(msg, publicKey);
-                // changed to v2 to use encrypted grouped AVP
-                crypto.diameterEncrypt_v2(msg, publicKey);
             }
-            // Answers without Dest-Realm, but seen previous Request
-            else if (!msg.isRequest()
-                    && diameter_sessions.containsKey(session_id) 
-                    && DiameterFirewallConfig.destination_realm_encryption.containsKey(diameter_sessions.get(session_id))
-              ) {
-                String _dest_realm = diameter_sessions.get(session_id);
-
-                PublicKey publicKey = DiameterFirewallConfig.destination_realm_encryption.get(_dest_realm);
-                logger.debug("Diameter Encryption of Answer for Destination Realm = " + _dest_realm);
-
-                // encrypt
-                // diameterEncrypt(msg, publicKey);
-                // changed to v2 to use encrypted grouped AVP
-                crypto.diameterEncrypt_v2(msg, publicKey);
-
-                diameter_sessions.remove(session_id);
-
-            }
-            // ------------ Encryption Autodiscovery ------------ 
-            else if (DiameterFirewallConfig.encryption_autodiscovery.equals("true")
-                    &&
-                    // If not encrypted Requests towards non HPLMN
-                    ((msg.isRequest()
-                    && !DiameterFirewallConfig.hplmn_realms.containsKey(dest_realm)
-                    && DiameterFirewallConfig.hplmn_realms.containsKey(orig_realm)) ||
-                    // In not encrypted Answers towards non HPLMN
-                    (!msg.isRequest()
-                    && diameter_sessions.containsKey(session_id))
-                    && !DiameterFirewallConfig.hplmn_realms.containsKey(diameter_sessions.get(session_id)))
-             ) {
-                String _dest_realm = dest_realm;
-                if(!msg.isRequest()) {
-                    _dest_realm = diameter_sessions.get(session_id);
-                }
-
-                if (!encryption_autodiscovery_sessions_reverse.containsKey(_dest_realm)) {
-
-                    IMessage message = parser.createEmptyMessage((IMessage)msg, CC_AUTO_ENCRYPTION);
-
-                    if(!msg.isRequest()) {
-                        message.setRequest(true);
-                        // TODO usa raw AVP encoding, because aaa:// is added by jDiameter
-                        message.getAvps().addAvp(Avp.DESTINATION_REALM, _dest_realm, true, false, true);
-                    }
-
-                    message.setHeaderApplicationId(16777251);
-
-                    avp = msg.getAvps().getAvp(Avp.ORIGIN_REALM);
-                    if (avp != null) {
-                        message.getAvps().addAvp(avp);
-                    }
-
-                    // --------- Add also Diameter signature ------------
-                    if (DiameterFirewallConfig.origin_realm_signing.containsKey(orig_realm)) {
-                        KeyPair keyPair = DiameterFirewallConfig.origin_realm_signing.get(orig_realm);
-                        crypto.diameterSign(message, keyPair);
-                    }
-                    // --------------------------------------------------
-
-                    logger.info("============ Sending Autodiscovery Request ============ ");
-
-                    // Workaround. E2E ID long value should be clamp to 32bit before use. It is clamped in proto encoding. 
-                    // See jDiamter MessageParser.java, Line 111. long endToEndId = ((long) in.readInt() << 32) >>> 32;
-                    long e2e_id = ((long) message.getEndToEndIdentifier() << 32) >>> 32;
-                    message.setEndToEndIdentifier(e2e_id);
-                    //
-
-                    sendDiameterMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), message, true, lua_hmap);
-
-
-                    logger.debug("encryption_autodiscovery_sessions.put " + message.getEndToEndIdentifier() + " " + _dest_realm);
-                    encryption_autodiscovery_sessions.put(message.getEndToEndIdentifier(), _dest_realm);
-                    logger.debug("encryption_autodiscovery_sessions_reverse.put " + _dest_realm + " " + message.getEndToEndIdentifier());
-                    encryption_autodiscovery_sessions_reverse.put(_dest_realm, message.getEndToEndIdentifier());
-                }
-            }
-            // -------------------------------------------------
-                       
-            sendDiameterMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, true, lua_hmap);
-                    
-        } catch (AvpDataException ex) {
-            java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (InvalidKeyException ex) {
-            java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-        }/* catch (URISyntaxException ex) {
-            java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (UnknownServiceException ex) {
-            java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-        }*/
+        });
+        
     }
 
     public void onServiceStarted() {

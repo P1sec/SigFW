@@ -85,6 +85,7 @@ import ss7fw.SS7FirewallConfig;
  */
 public class Crypto implements CryptoInterface {
     
+    /*
     // Encryption RSA
     public static KeyFactory keyFactoryRSA;
     public static Cipher cipherRSA;
@@ -93,6 +94,7 @@ public class Crypto implements CryptoInterface {
     public static KeyFactory keyFactoryEC;
     public static Cipher cipherAES_GCM;
     public static Signature signatureECDSA;
+    */
     
     static final private int AVP_ENCRYPTED = 1100;
     static final private int AVP_ENCRYPTED_GROUPED = 1101;
@@ -112,6 +114,7 @@ public class Crypto implements CryptoInterface {
     }
     
     public Crypto() {
+        /*
         // Encryption RSA
         try {
             keyFactoryRSA = KeyFactory.getInstance("RSA");
@@ -135,6 +138,7 @@ public class Crypto implements CryptoInterface {
         } catch (NoSuchProviderException ex) {
             java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
         }
+        */
     }
     
     protected static void configLog4j() {
@@ -153,6 +157,24 @@ public class Crypto implements CryptoInterface {
     @Override
     public void diameterSign(Message message, KeyPair keyPair) {
         //logger.debug("Message Sign = " + message.getAvps().toString());
+        
+        Signature signatureRSA = null;
+        Signature signatureECDSA = null;
+        
+        // Encryption RSA
+        try {
+            signatureRSA = Signature.getInstance("SHA256WithRSA");
+        } catch (NoSuchAlgorithmException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+        // Encryption EC
+        try {
+            signatureECDSA = Signature.getInstance("SHA256withECDSA");
+        } catch (NoSuchAlgorithmException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
         
         if (keyPair != null) {
             PrivateKey privateKey = keyPair.getPrivate();
@@ -216,10 +238,10 @@ public class Crypto implements CryptoInterface {
                         byte[] signatureBytes = null;
                         // RSA
                         if (privateKey instanceof RSAPrivateKey) {
-                            this.signatureRSA.initSign(privateKey);
+                            signatureRSA.initSign(privateKey);
 
-                            this.signatureRSA.update(dataToSign.getBytes());
-                            signatureBytes = this.signatureRSA.sign();
+                            signatureRSA.update(dataToSign.getBytes());
+                            signatureBytes = signatureRSA.sign();
                         }
                         // EC
                         else if (privateKey instanceof ECPrivateKey) {
@@ -251,6 +273,16 @@ public class Crypto implements CryptoInterface {
         
         if (publicKey == null) {
             return "";
+        }
+        
+        Signature signatureRSA = null;
+        Signature signatureECDSA = null;
+        
+        // Encryption RSA
+        try {
+            signatureRSA = Signature.getInstance("SHA256WithRSA");
+        } catch (NoSuchAlgorithmException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
         }
         
         List<Integer> signed_index = new ArrayList<Integer>();
@@ -340,9 +372,9 @@ public class Crypto implements CryptoInterface {
                 }*/
                 
                 if (publicKey instanceof RSAPublicKey) {
-                    this.signatureRSA.initVerify(publicKey);
-                    this.signatureRSA.update(dataToSign.getBytes());
-                    if (signatureBytes != null && this.signatureRSA.verify(signatureBytes)) {
+                    signatureRSA.initVerify(publicKey);
+                    signatureRSA.update(dataToSign.getBytes());
+                    if (signatureBytes != null && signatureRSA.verify(signatureBytes)) {
                         return "";
                     }
                 } else if (publicKey instanceof ECPublicKey) {
@@ -367,6 +399,31 @@ public class Crypto implements CryptoInterface {
 
     @Override
     public void diameterEncrypt(Message message, PublicKey publicKey) throws InvalidKeyException {
+        
+        // Encryption RSA
+        Cipher cipherRSA = null;
+        // Encryption EC
+        Cipher cipherAES_GCM = null;
+        
+        // Encryption RSA
+        try {
+            cipherRSA = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+        } catch (NoSuchAlgorithmException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchPaddingException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+        // Encryption EC
+        try {
+            cipherAES_GCM = Cipher.getInstance("AES/GCM/NoPadding", "SunJCE");
+        } catch (NoSuchAlgorithmException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchPaddingException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchProviderException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
         
         //logger.debug("== diameterEncrypt ==");
         AvpSet avps = message.getAvps();
@@ -404,18 +461,18 @@ public class Crypto implements CryptoInterface {
                         TVP[2] = (byte) ((t >>  8) & 0xFF);
                         TVP[3] = (byte) ((t >>  0) & 0xFF);
 
-                        //this.cipherRSA.init(Cipher.ENCRYPT_MODE, publicKey);
-                        //byte[] cipherText = this.cipherRSA.doFinal(b);
+                        //Crypto.cipherRSA.init(Cipher.ENCRYPT_MODE, publicKey);
+                        //byte[] cipherText = Crypto.cipherRSA.doFinal(b);
 
                         RSAPublicKey rsaPublicKey = (RSAPublicKey)publicKey;
-                        this.cipherRSA.init(Cipher.ENCRYPT_MODE, publicKey);
+                        cipherRSA.init(Cipher.ENCRYPT_MODE, publicKey);
 
                         int keyLength = rsaPublicKey.getModulus().bitLength() / 8;
 
                         byte[][] datas = splitByteArray(d, keyLength - 11 - 4);
                         byte[] cipherText = null;
                         for (byte[] b : datas) {
-                            cipherText = concatByteArray(cipherText, this.cipherRSA.doFinal(concatByteArray(TVP, b)));
+                            cipherText = concatByteArray(cipherText, cipherRSA.doFinal(concatByteArray(TVP, b)));
                         }
 
                         cipherText = concatByteArray(SPI, cipherText);
@@ -443,6 +500,32 @@ public class Crypto implements CryptoInterface {
 
     @Override
     public String diameterDecrypt(Message message, KeyPair keyPair) {
+        
+        // Encryption RSA
+        Cipher cipherRSA = null;
+        // Encryption EC
+        Cipher cipherAES_GCM = null;
+        
+        // Encryption RSA
+        try {
+            cipherRSA = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+        } catch (NoSuchAlgorithmException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchPaddingException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+        // Encryption EC
+        try {
+            cipherAES_GCM = Cipher.getInstance("AES/GCM/NoPadding", "SunJCE");
+        } catch (NoSuchAlgorithmException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchPaddingException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchProviderException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
         //logger.debug("== diameterDecrypt ==");
         AvpSet avps = message.getAvps();
         
@@ -476,7 +559,7 @@ public class Crypto implements CryptoInterface {
 
                         // TODO verify SPI
 
-                        this.cipherRSA.init(Cipher.DECRYPT_MODE, privateKey);
+                        cipherRSA.init(Cipher.DECRYPT_MODE, privateKey);
 
                         RSAPublicKey rsaPublicKey = (RSAPublicKey)keyPair.getPublic();
                         int keyLength = rsaPublicKey.getModulus().bitLength() / 8;
@@ -484,7 +567,7 @@ public class Crypto implements CryptoInterface {
                         byte[][] datas = splitByteArray(d, keyLength/* - 11*/);
                         byte[] decryptedText = null;
                         for (byte[] _b : datas) {
-                            d = this.cipherRSA.doFinal(_b);
+                            d = cipherRSA.doFinal(_b);
 
                             // ---- Verify TVP from Security header ----
                             long t = System.currentTimeMillis()/100;    // in 0.1s
@@ -564,7 +647,7 @@ public class Crypto implements CryptoInterface {
 
                         // TODO verify SPI
 
-                        this.cipherRSA.init(Cipher.DECRYPT_MODE, privateKey);
+                        cipherRSA.init(Cipher.DECRYPT_MODE, privateKey);
 
                         RSAPublicKey rsaPublicKey = (RSAPublicKey)keyPair.getPublic();
                         int keyLength = rsaPublicKey.getModulus().bitLength() / 8;
@@ -572,7 +655,7 @@ public class Crypto implements CryptoInterface {
                         byte[][] datas = splitByteArray(d, keyLength/* - 11*/);
                         byte[] decryptedText = null;
                         for (byte[] _b : datas) {
-                            d = this.cipherRSA.doFinal(_b);
+                            d = cipherRSA.doFinal(_b);
 
                             // ---- Verify TVP from Security header ----
                             long t = System.currentTimeMillis()/100;    // in 0.1s
@@ -620,15 +703,23 @@ public class Crypto implements CryptoInterface {
                         avps.removeAvpByIndex(i + _avps.size());
 
                     } catch (InvalidKeyException ex) {
-                        java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                        //java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                        logger.warn("diameterDecrypt InvalidKeyException");
                     } catch (IllegalBlockSizeException ex) {
-                        java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                        //java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                        logger.warn("diameterDecrypt IllegalBlockSizeException");
                     } catch (BadPaddingException ex) {
-                        java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                        //java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                        logger.warn("diameterDecrypt BadPaddingException");
                     } catch (AvpDataException ex) {
-                        java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                        //java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                        logger.warn("diameterDecrypt AvpDataException");
                     } catch (IOException ex) {
-                        java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                        //java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                        logger.warn("diameterDecrypt IOException");
+                    } catch (IllegalStateException ex) {
+                        //java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                        logger.warn("diameterDecrypt IllegalStateException");
                     }
                 }  else if (privateKey instanceof ECPrivateKey) {
                     logger.warn("EC algorithm not implemented");
@@ -651,6 +742,31 @@ public class Crypto implements CryptoInterface {
      * @param publicKey Public Key used for message encryption
      */
     public void diameterEncrypt_v2(Message message, PublicKey publicKey) throws InvalidKeyException {
+        
+        // Encryption RSA
+        Cipher cipherRSA = null;
+        // Encryption EC
+        Cipher cipherAES_GCM = null;
+        
+        // Encryption RSA
+        try {
+            cipherRSA = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+        } catch (NoSuchAlgorithmException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchPaddingException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+        // Encryption EC
+        try {
+            cipherAES_GCM = Cipher.getInstance("AES/GCM/NoPadding", "SunJCE");
+        } catch (NoSuchAlgorithmException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchPaddingException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchProviderException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
         
         //logger.debug("== diameterEncrypt_v2 ==");
         AvpSet avps = message.getAvps();
@@ -697,18 +813,18 @@ public class Crypto implements CryptoInterface {
                 TVP[2] = (byte) ((t >>  8) & 0xFF);
                 TVP[3] = (byte) ((t >>  0) & 0xFF);
 
-                //this.cipherRSA.init(Cipher.ENCRYPT_MODE, publicKey);
-                //byte[] cipherText = this.cipherRSA.doFinal(b);
+                //Crypto.cipherRSA.init(Cipher.ENCRYPT_MODE, publicKey);
+                //byte[] cipherText = Crypto.cipherRSA.doFinal(b);
 
                 RSAPublicKey rsaPublicKey = (RSAPublicKey)publicKey;
-                this.cipherRSA.init(Cipher.ENCRYPT_MODE, publicKey);
+                cipherRSA.init(Cipher.ENCRYPT_MODE, publicKey);
 
                 int keyLength = rsaPublicKey.getModulus().bitLength() / 8;
 
                 byte[][] datas = splitByteArray(d, keyLength - 11 - 4);
                 byte[] cipherText = null;
                 for (byte[] b : datas) {
-                    cipherText = concatByteArray(cipherText, this.cipherRSA.doFinal(concatByteArray(TVP, b)));
+                    cipherText = concatByteArray(cipherText, cipherRSA.doFinal(concatByteArray(TVP, b)));
                 }
 
                 cipherText = concatByteArray(SPI, cipherText);
@@ -718,10 +834,15 @@ public class Crypto implements CryptoInterface {
                 avps.addAvp(AVP_ENCRYPTED_GROUPED, cipherText, false, false);
 
             } catch (IllegalBlockSizeException ex) {
-                java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                //java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                logger.warn("diameterEncrypt_v2 IllegalBlockSizeException");
             } catch (BadPaddingException ex) {
-                java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
-            } 
+                //java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                logger.warn("diameterEncrypt_v2 BadPaddingException");
+            } catch (IllegalStateException ex) {
+                //java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                logger.warn("diameterEncrypt_v2 IllegalStateException");
+            }
         }  else if (publicKey instanceof ECPublicKey) {
             logger.warn("EC Public Key algorithm not implemented");
             return;
@@ -744,6 +865,24 @@ public class Crypto implements CryptoInterface {
      */
     @Override
     public int tcapVerify(SccpDataMessage message, TCBeginMessage tcb, Component[] comps, PublicKey publicKey) {
+        
+        Signature signatureRSA = null;
+        Signature signatureECDSA = null;
+        
+        // Encryption RSA
+        try {
+            signatureRSA = Signature.getInstance("SHA256WithRSA");
+        } catch (NoSuchAlgorithmException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+        // Encryption EC
+        try {
+            signatureECDSA = Signature.getInstance("SHA256withECDSA");
+        } catch (NoSuchAlgorithmException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
         // --------------- TCAP verify  ---------------
         int signature_ok = 0;
 
@@ -846,9 +985,9 @@ public class Crypto implements CryptoInterface {
                 }
 
                 if (publicKey instanceof RSAPublicKey) {
-                    this.signatureRSA.initVerify(publicKey);
-                    this.signatureRSA.update(dataToSign.getBytes());
-                    if (signatureBytes != null && this.signatureRSA.verify(signatureBytes)) {
+                    signatureRSA.initVerify(publicKey);
+                    signatureRSA.update(dataToSign.getBytes());
+                    if (signatureBytes != null && signatureRSA.verify(signatureBytes)) {
                         signature_ok = 1;
                     }
                 } else if (publicKey instanceof ECPublicKey) {
@@ -888,6 +1027,25 @@ public class Crypto implements CryptoInterface {
      */
     @Override
     public LongMessageRuleType tcapSign(SccpDataMessage message, TCBeginMessage tcb, Component[] comps, LongMessageRuleType lmrt, KeyPair keyPair) {
+        
+        Signature signatureRSA = null;
+        Signature signatureECDSA = null;
+        
+        // Encryption RSA
+        try {
+            signatureRSA = Signature.getInstance("SHA256WithRSA");
+        } catch (NoSuchAlgorithmException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+        // Encryption EC
+        try {
+            signatureECDSA = Signature.getInstance("SHA256withECDSA");
+        } catch (NoSuchAlgorithmException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+
         // --------------- TCAP signing ---------------
         LongMessageRuleType l = lmrt;
         
@@ -963,10 +1121,10 @@ public class Crypto implements CryptoInterface {
                 byte[] signatureBytes = null;
                 // RSA
                 if (privateKey instanceof RSAPrivateKey) {
-                    this.signatureRSA.initSign(privateKey);
+                    signatureRSA.initSign(privateKey);
 
-                    this.signatureRSA.update(dataToSign.getBytes());
-                    signatureBytes = this.signatureRSA.sign();
+                    signatureRSA.update(dataToSign.getBytes());
+                    signatureBytes = signatureRSA.sign();
                 }
                 // EC
                 else if (privateKey instanceof ECPrivateKey) {
@@ -1023,7 +1181,32 @@ public class Crypto implements CryptoInterface {
     @Override
     public Pair<SccpDataMessage, LongMessageRuleType> tcapEncrypt(SccpDataMessage message, MessageFactoryImpl sccpMessageFactory, PublicKey publicKey, LongMessageRuleType lmrt) {
         logger.debug("TCAP Encryption for SCCP Called GT = " + message.getCalledPartyAddress().getGlobalTitle().getDigits());
-            
+        
+        // Encryption RSA
+        Cipher cipherRSA = null;
+        // Encryption EC
+        Cipher cipherAES_GCM = null;
+        
+        // Encryption RSA
+        try {
+            cipherRSA = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+        } catch (NoSuchAlgorithmException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchPaddingException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+        // Encryption EC
+        try {
+            cipherAES_GCM = Cipher.getInstance("AES/GCM/NoPadding", "SunJCE");
+        } catch (NoSuchAlgorithmException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchPaddingException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchProviderException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
         LongMessageRuleType l = lmrt;
         
         try {
@@ -1042,14 +1225,14 @@ public class Crypto implements CryptoInterface {
 
             if (publicKey instanceof RSAPublicKey) {
                 RSAPublicKey rsaPublicKey = (RSAPublicKey)publicKey;
-                this.cipherRSA.init(Cipher.ENCRYPT_MODE, publicKey);
+                cipherRSA.init(Cipher.ENCRYPT_MODE, publicKey);
 
                 int keyLength = rsaPublicKey.getModulus().bitLength() / 8;
 
                 byte[][] datas = splitByteArray(message.getData(), keyLength - 11 - 4);
                 byte[] cipherText = null;
                 for (byte[] b : datas) {
-                    cipherText = concatByteArray(cipherText, this.cipherRSA.doFinal(concatByteArray(TVP, b)));
+                    cipherText = concatByteArray(cipherText, cipherRSA.doFinal(concatByteArray(TVP, b)));
                 }
 
                 cipherText = concatByteArray(SPI, cipherText);
@@ -1087,6 +1270,31 @@ public class Crypto implements CryptoInterface {
     public Pair<SccpDataMessage, String> tcapDecrypt(SccpDataMessage message, MessageFactoryImpl sccpMessageFactory, KeyPair keyPair) {
         logger.debug("TCAP Decryption for SCCP Called GT = " + message.getCalledPartyAddress().getGlobalTitle().getDigits());
 
+        // Encryption RSA
+        Cipher cipherRSA = null;
+        // Encryption EC
+        Cipher cipherAES_GCM = null;
+        
+        // Encryption RSA
+        try {
+            cipherRSA = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+        } catch (NoSuchAlgorithmException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchPaddingException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+        // Encryption EC
+        try {
+            cipherAES_GCM = Cipher.getInstance("AES/GCM/NoPadding", "SunJCE");
+        } catch (NoSuchAlgorithmException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchPaddingException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (NoSuchProviderException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
         try {
             // Sending XUDT message from UDT message
 
@@ -1106,7 +1314,7 @@ public class Crypto implements CryptoInterface {
             
             if (privateKey instanceof RSAPrivateKey) {
             
-                this.cipherRSA.init(Cipher.DECRYPT_MODE, privateKey);
+                cipherRSA.init(Cipher.DECRYPT_MODE, privateKey);
 
                 RSAPublicKey rsaPublicKey = (RSAPublicKey) keyPair.getPublic();
                 int keyLength = rsaPublicKey.getModulus().bitLength() / 8;
@@ -1116,7 +1324,7 @@ public class Crypto implements CryptoInterface {
                 byte[] decryptedText = null;
                 for (byte[] b : datas) {
 
-                    byte[] d = this.cipherRSA.doFinal(b);
+                    byte[] d = cipherRSA.doFinal(b);
                     // ------- Verify TVP --------
                     long t = System.currentTimeMillis() / 100;    // in 0.1s
                     TVP[0] = (byte) ((t >> 24) & 0xFF);

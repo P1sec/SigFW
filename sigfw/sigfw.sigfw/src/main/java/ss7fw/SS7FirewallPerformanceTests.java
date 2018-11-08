@@ -34,6 +34,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.logging.Level;
+import javax.xml.bind.DatatypeConverter;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
 import org.mobicents.protocols.api.Association;
@@ -60,6 +61,7 @@ public class SS7FirewallPerformanceTests implements ManagementEventListener, Ass
     private boolean sctpServerAssociationUp = false;
     NettyAssociationImpl clientAssociation = null;
     int messagesRecieved = 0;
+    int errorMessagesRecieved = 0;
     
     // IN, OUT MAX SCTP STREAMS
     private static Map<Association, Integer> sctpAssciationsMaxInboundStreams = new HashMap<Association, Integer>();
@@ -222,13 +224,13 @@ public class SS7FirewallPerformanceTests implements ManagementEventListener, Ass
             long startTime = System.nanoTime();
             
             
-            int max_messages = 20000;
+            int max_messages = 500000;
             for (int i = 0; i < max_messages; i++) {
                 
                 
                 // processUnstructuredSS-Request
                 streamNumber = i;
-                bytes = hexStringToByteArray("01000101000000b80006000800000064021000a50000000100000002030200010901030e190b12080012042222222222220b12080012041111111111117762754804000000016b432841060700118605010101a036603480020780a109060704000001001302be232821060704000001010101a016a01480099611111111111111f18107961111111111f16c28a12602010002013b301e04010f0410aa582ca65ac562b1582c168bc562b1118007911111111111f1000000");
+                bytes = hexStringToByteArray("01000101000000b80006000800000064021000a50000000100000002030200010901030e190b12080012040000000000000b12080012041111111111117762754804000000016b432841060700118605010101a036603480020780a109060704000001001302be232821060704000001010101a016a01480099611111111111111f18107961111111111f16c28a12602010002013b301e04010f0410aa582ca65ac562b1582c168bc562b1118007911111111111f1000000");
                 byteBuffer = ByteBuffer.wrap(bytes);
                 if (sctpAssciationsMaxInboundStreams.containsKey(a)) {
                     sn = streamNumber % sctpAssciationsMaxInboundStreams.get(a).intValue();
@@ -239,12 +241,13 @@ public class SS7FirewallPerformanceTests implements ManagementEventListener, Ass
                 if (i%100 == 0) {
                     log.info("Messages sent     ........ #" + i);
                     log.info("Messages recieved ........ #" + messagesRecieved);
+                    log.info("Error Messages recieved .. #" + errorMessagesRecieved);
                 }
                 
                 // if there is more than 2000 messages sent and not recieved
                 // throttle sending to not overflow the recieving buffer
-                if (i - messagesRecieved > 2000) {
-                    Thread.currentThread().sleep(100);
+                if (i - messagesRecieved > 5000) {
+                    Thread.currentThread().sleep(10);
                 }
 
             }
@@ -256,6 +259,7 @@ public class SS7FirewallPerformanceTests implements ManagementEventListener, Ass
 
                 log.info("Messages sent     ........ #" + max_messages);
                 log.info("Messages recieved ........ #" + messagesRecieved);
+                log.info("Error Messages recieved .. #" + errorMessagesRecieved);
             }
             
             long estimatedTime = System.nanoTime() - startTime;
@@ -422,7 +426,14 @@ public class SS7FirewallPerformanceTests implements ManagementEventListener, Ass
     public void onPayload(Association asctn, PayloadData pd) {
         log.debug("[[[[[[[[[[    onPayload      ]]]]]]]]]]");
         
-        if (messagesRecieved == 0) {
+        ByteBuffer buf = ByteBuffer.wrap(pd.getData());
+        byte[] arr = new byte[buf.remaining()];
+        buf.get(arr);
+        
+        // ASPUP recieved
+        if (DatatypeConverter.printHexBinary(arr).equals("01000301000000100011000800000003".toUpperCase())) {
+            
+            log.info("[[[[[[[[[[    ASPUP recieved      ]]]]]]]]]]");
             
             // Answer
             try {
@@ -439,13 +450,18 @@ public class SS7FirewallPerformanceTests implements ManagementEventListener, Ass
                     sn = streamNumber % sctpAssciationsMaxInboundStreams.get(asctn.getName()).intValue();
                 }
                 payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, 3, sn);
-                asctn.send(payloadData);            
+                asctn.send(payloadData);     
+                
+                log.info("[[[[[[[[[[    ASPUP_ACK sent      ]]]]]]]]]]");
+                
             } catch (Exception ex) {
                 java.util.logging.Logger.getLogger(SS7FirewallPerformanceTests.class.getName()).log(Level.SEVERE, null, ex);
             }
         }
-        
-        if (messagesRecieved == 1) {
+        // ASPAC recieved
+        else if (DatatypeConverter.printHexBinary(arr).equals("0100040100000018000b0008000000020006000800000064".toUpperCase())) {
+            
+            log.info("[[[[[[[[[[    ASPAC recieved      ]]]]]]]]]]");
             
             // Answer
             try {
@@ -464,6 +480,8 @@ public class SS7FirewallPerformanceTests implements ManagementEventListener, Ass
                 payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, 3, sn);
                 asctn.send(payloadData);
                 
+                log.info("[[[[[[[[[[    ASPAC_ACK sent      ]]]]]]]]]]");
+                
                 Thread.currentThread().sleep(1000);
                 
                 // NTFY
@@ -475,12 +493,53 @@ public class SS7FirewallPerformanceTests implements ManagementEventListener, Ass
                 payloadData = new PayloadData(byteBuffer.array().length, byteBuffer.array(), true, false, 3, sn);
                 asctn.send(payloadData);
                 
+                log.info("[[[[[[[[[[    NTFY sent      ]]]]]]]]]]");
+                
             } catch (Exception ex) {
                 java.util.logging.Logger.getLogger(SS7FirewallPerformanceTests.class.getName()).log(Level.SEVERE, null, ex);
             }
         }
-        
-        messagesRecieved++;
+        // ASPUP_ACK recieved
+        else if (DatatypeConverter.printHexBinary(arr).equals("01000304000000100011000800000002".toUpperCase())) {
+            
+            log.info("[[[[[[[[[[    ASPUP_ACK recieved      ]]]]]]]]]]");
+        }
+        // ASPAC_ACK recieved
+        else if (DatatypeConverter.printHexBinary(arr).equals("0100040300000018000B0008000000020006000800000064".toUpperCase())) {
+            
+            log.info("[[[[[[[[[[    ASPAC_ACK recieved      ]]]]]]]]]]");
+        }
+        // NTFY recieved
+        else if (DatatypeConverter.printHexBinary(arr).equals("0100000100000020000d00080001000200110008000000020006000800000064".toUpperCase())) {
+            
+            log.info("[[[[[[[[[[    NTFY recieved      ]]]]]]]]]]");
+        }
+        // NTFY recieved
+        else if (DatatypeConverter.printHexBinary(arr).equals("0100000100000020000d00080001000300110008000000020006000800000064".toUpperCase())) {
+            
+            log.info("[[[[[[[[[[    NTFY recieved      ]]]]]]]]]]");
+        }
+        else {
+               
+            // OK - The same USSD as was sent was recieved
+            // 01000101000000B80006000800000064021000A50000000100000002030000010901030E190B12080012040000000000000B12080012041111111111117762754804000000016B432841060700118605010101A036603480020780A109060704000001001302BE232821060704000001010101A016A01480099611111111111111F18107961111111111F16C28A12602010002013B301E04010F0410AA582CA65AC562B1582C168BC562B1118007911111111111F1000000
+            // 01000101000000B80006000800000064021000A50000000100000002030000010901030E190B12080012040000000000000B12080012041111111111117762754804000000016B432841060700118605010101A036603480020780A109060704000001001302BE232821060704000001010101A016A01480099611111111111111F18107961111111111F16C28A12602010002013B301E04010F0410AA582CA65AC562B1582C168BC562B1118007911111111111F1000000
+            if (DatatypeConverter.printHexBinary(arr).equals("01000101000000B80006000800000064021000A50000000100000002030000010901030E190B12080012040000000000000B12080012041111111111117762754804000000016B432841060700118605010101A036603480020780A109060704000001001302BE232821060704000001010101A016A01480099611111111111111F18107961111111111F16C28A12602010002013B301E04010F0410AA582CA65AC562B1582C168BC562B1118007911111111111F1000000")) {
+
+            }
+            // OK - The USSD just differently encoded after 2 FWs
+            // 01000101000000b80006000800000064021000a700000001000000020300000111000f040f1a000b12080012040000000000000b12080012041111111111117762754804000000016b432841060700118605010101a036603480020780a109060704000001001302be232821060704000001010101a016a01480099611111111111111f18107961111111111f16c28a12602010002013b301e04010f0410aa582ca65ac562b1582c168bc562b1118007911111111111f100
+            else if (DatatypeConverter.printHexBinary(arr).equals("01000101000000b80006000800000064021000a700000001000000020300000111000f040f1a000b12080012040000000000000b12080012041111111111117762754804000000016b432841060700118605010101a036603480020780a109060704000001001302be232821060704000001010101a016a01480099611111111111111f18107961111111111f16c28a12602010002013b301e04010f0410aa582ca65ac562b1582c168bc562b1118007911111111111f100".toUpperCase())) {
+
+            }
+            // report error
+            else {
+                log.warn(DatatypeConverter.printHexBinary(arr));
+                errorMessagesRecieved++;        
+            }
+
+            messagesRecieved++;
+        }
     }
 
     @Override

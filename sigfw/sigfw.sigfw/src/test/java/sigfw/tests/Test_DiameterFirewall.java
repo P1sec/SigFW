@@ -115,6 +115,11 @@ public class Test_DiameterFirewall {
             Logger.getLogger(Test_DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
         }
         
+        try {
+            Thread.currentThread().sleep(100);
+        } catch (InterruptedException ex) {
+            Logger.getLogger(Test_SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+        }
         Assert.assertTrue("This ULR message (CommandCode 316, Request) should be allowed by LUA rules diameter_orig_realm", !sigfw.unitTestingFlags_sendDiameterMessage);
 
         
