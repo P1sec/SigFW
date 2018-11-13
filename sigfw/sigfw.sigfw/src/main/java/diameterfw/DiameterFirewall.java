@@ -208,7 +208,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
     // Diameter sessions
     // TODO consider additng Diameter Host into Key
     // Used to correlate Diameter Answers with Requests, to learn the Dest-Realm for the answer
-    // Key: AppID + ":" + "CommandCode" + ":" + Dest_realm + ":" + msg.getEndToEndIdentifier() + ":" + msg.getHopByHopIdentifier())
+    // Key: AppID + ":" + "CommandCode" + ":" + Dest_realm + ":" + msg.getEndToEndIdentifier()
     // Value: Origin-Realm from first message detected (Request)
     private static Map<String, String> diameter_sessions = ExpiringMap.builder()
                                                 .expiration(10, TimeUnit.SECONDS)
@@ -1034,7 +1034,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                     // ------ Request/Answer correlation --------
                     // Store the Diameter session, to be able encrypt also answers. Store Origin Realm from Request
                     if (!dest_realm.equals("") && msg.isRequest()) {
-                        String session_id = ai + ":" + cc + ":" + dest_realm + ":" + msg.getEndToEndIdentifier() + ":" + msg.getHopByHopIdentifier();
+                        String session_id = ai + ":" + cc + ":" + dest_realm + ":" + msg.getEndToEndIdentifier();
                         diameter_sessions.put(session_id, orig_realm);
                     }
                     // ------------------------------------------
@@ -1064,7 +1064,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                     // Answers without Dest-Realm, but seen previously Request
                     else if (!msg.isRequest()) {
                         String _dest_realm = "";
-                        String session_id = ai + ":" + cc + ":" + orig_realm + ":" + msg.getEndToEndIdentifier() + ":" + msg.getHopByHopIdentifier();
+                        String session_id = ai + ":" + cc + ":" + orig_realm + ":" + msg.getEndToEndIdentifier();
                         if (diameter_sessions.containsKey(session_id)) {
                             _dest_realm = diameter_sessions.get(session_id);
                         }
@@ -1318,7 +1318,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
 
 
                     // ---------- Diameter encryption -----------
-                    String session_id = ai + ":" +  cc + ":" +  orig_realm + ":" + msg.getEndToEndIdentifier() + ":" + msg.getHopByHopIdentifier();
+                    String session_id = ai + ":" +  cc + ":" +  orig_realm + ":" + msg.getEndToEndIdentifier();
 
                     // Requests containing Dest-Realm
                     if (!dest_realm.equals("") && msg.isRequest() && DiameterFirewallConfig.destination_realm_encryption.containsKey(dest_realm)) { 
