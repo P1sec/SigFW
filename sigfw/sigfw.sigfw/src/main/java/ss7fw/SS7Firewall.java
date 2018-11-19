@@ -386,7 +386,8 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
         this.sctpManagement = new org.mobicents.protocols.sctp.netty.NettySctpManagementImpl(
                 (String)SS7FirewallConfig.get("$.sigfw_configuration.sctp.sctp_management_name")
         );
-        this.sctpManagement.setSingleThread(false);
+        
+        this.sctpManagement.setSingleThread(true);
         
         this.sctpManagement.setPersistDir(persistDir);
         
@@ -974,6 +975,8 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
      */
     @Override
     public void onMessage(final SccpDataMessage msg) {
+        
+        logger.debug("[[[[[[[[[[    Sccp Message Recieved MainThread     ]]]]]]]]]]");
         
         threadPool.execute(new Runnable() {
             @Override

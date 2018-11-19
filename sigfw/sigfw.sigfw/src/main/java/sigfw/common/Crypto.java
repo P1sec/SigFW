@@ -46,7 +46,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.logging.Level;
 import javafx.util.Pair;
@@ -75,9 +77,9 @@ import org.mobicents.protocols.ss7.tcap.asn.comp.OperationCode;
 import org.mobicents.protocols.ss7.tcap.asn.comp.Parameter;
 import org.mobicents.protocols.ss7.tcap.asn.comp.TCBeginMessage;
 import static sigfw.common.Utils.concatByteArray;
+import static sigfw.common.Utils.int32ToBytes;
+import static sigfw.common.Utils.bytesToInt32;
 import static sigfw.common.Utils.splitByteArray;
-import ss7fw.SS7Firewall;
-import ss7fw.SS7FirewallConfig;
 
 /**
  *
@@ -98,6 +100,7 @@ public class Crypto implements CryptoInterface {
     
     static final private int AVP_ENCRYPTED = 1100;
     static final private int AVP_ENCRYPTED_GROUPED = 1101;
+    static final private int AVP_ENCRYPTED_GROUPED_INDEXED = 1102;
     static final private int AVP_SIGNATURE = 1000;
     
     static final private Long OC_SIGNATURE = 100L;
@@ -531,6 +534,7 @@ public class Crypto implements CryptoInterface {
         
         int avps_size = avps.size();
         
+        
         for (int i = 0; i < avps_size; i++) {
             Avp a = avps.getAvpByIndex(i);
             
@@ -728,12 +732,15 @@ public class Crypto implements CryptoInterface {
                     logger.warn("Unknown Private Key algorithm");
                     return "";
                 }
+            } else if (a.getCode() == AVP_ENCRYPTED_GROUPED_INDEXED) {
+                logger.warn("Diameter Decryption of Grouped Indexed Encrypted AVP is not supported by this SigFW version");
+                return "";
             }
+            
         }
         
         return "";
     }
-    
             
     /**
      * Method to encrypt Diameter message v2
@@ -850,6 +857,19 @@ public class Crypto implements CryptoInterface {
             logger.warn("Unknown Public Key algorithm");
             return;
         }
+    }
+    
+    /**
+     * Method to encrypt Diameter message v3
+     * 
+     * @param message Diameter message which will be encrypted
+     * @param publicKey Public Key used for message encryption
+     */
+    public void diameterEncrypt_v3(Message message, PublicKey publicKey) throws InvalidKeyException {
+        
+        logger.warn("diameterEncrypt_v3 is not supported by this SigFW version");
+        return;
+  
     }
 
     /**

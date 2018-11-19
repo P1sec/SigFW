@@ -68,6 +68,7 @@ public interface CryptoInterface {
      */
     public void diameterEncrypt(Message message, PublicKey publicKey) throws InvalidKeyException;
     public void diameterEncrypt_v2(Message message, PublicKey publicKey) throws InvalidKeyException;
+    public void diameterEncrypt_v3(Message message, PublicKey publicKey) throws InvalidKeyException;
     
     /**
      * Method to decrypt Diameter message

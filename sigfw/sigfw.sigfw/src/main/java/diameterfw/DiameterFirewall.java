@@ -244,7 +244,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                 (String)DiameterFirewallConfig.get("$.sigfw_configuration.sctp.sctp_management_name")
         );
         
-        this.sctpManagement.setSingleThread(false);
+        this.sctpManagement.setSingleThread(true);
 
         // TODO no persistent XMLs
         // will cause FileNotFoundException, but currently there is no method to properly disable it
@@ -954,6 +954,8 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
     
 
     public void onPayload(final Association asctn, final PayloadData pd) {
+        
+        logger.debug("[[[[[[[[[[    onPayload MainThread      ]]]]]]]]]]");
         
         threadPool.execute(new Runnable() {
             @Override

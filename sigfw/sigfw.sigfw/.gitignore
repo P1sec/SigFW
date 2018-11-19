@@ -11,4 +11,5 @@ server-management*.xml
 127.0.0.1.*.xml
 input/
 src/main/resources/SigFW_extension-1.0.jar
+nbactions-release-profile.xml
 
