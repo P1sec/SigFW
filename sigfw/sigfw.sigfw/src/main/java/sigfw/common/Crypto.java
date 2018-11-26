@@ -26,6 +26,7 @@ package sigfw.common;
 
 import com.p1sec.sigfw.SigFW_interface.CryptoInterface;
 import diameterfw.DiameterFirewall;
+import static diameterfw.DiameterFirewall.AVP_SIGNING_REALM;
 import diameterfw.DiameterFirewallConfig;
 import java.io.IOException;
 import java.io.InputStream;
@@ -158,7 +159,7 @@ public class Crypto implements CryptoInterface {
     }
 
     @Override
-    public void diameterSign(Message message, KeyPair keyPair) {
+    public void diameterSign(Message message, KeyPair keyPair, String signingRealm) {
         //logger.debug("Message Sign = " + message.getAvps().toString());
         
         Signature signatureRSA = null;
@@ -182,8 +183,10 @@ public class Crypto implements CryptoInterface {
         if (keyPair != null) {
             PrivateKey privateKey = keyPair.getPrivate();
             if(privateKey != null) {
-        
+                
                 AvpSet avps = message.getAvps();
+                
+                avps.addAvp(AVP_SIGNING_REALM, signingRealm.getBytes());
 
                 boolean signed = false;
                 for (int i = 0; i < avps.size(); i++) {
@@ -350,7 +353,7 @@ public class Crypto implements CryptoInterface {
                 for (int i = 0; i < signed_index.size(); i++) {
                     avps.removeAvpByIndex(signed_index.get(i));
                 }
-
+                
                 // verify signature
                 String dataToSign = message.getApplicationId() + ":" + message.getCommandCode() + ":" + message.getEndToEndIdentifier() + ":" + t_tvp;
                 
@@ -374,6 +377,9 @@ public class Crypto implements CryptoInterface {
                     }
                 }*/
                 
+                // remove AVP_SIGNING_REALM;
+                avps.removeAvp(AVP_SIGNING_REALM);
+                
                 if (publicKey instanceof RSAPublicKey) {
                     signatureRSA.initVerify(publicKey);
                     signatureRSA.update(dataToSign.getBytes());
@@ -387,7 +393,7 @@ public class Crypto implements CryptoInterface {
                     logger.warn("Unknown Public Key algorithm");
                     return "";
                 }
-
+                
             } catch (InvalidKeyException ex) {
                 java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
             } catch (SignatureException ex) {

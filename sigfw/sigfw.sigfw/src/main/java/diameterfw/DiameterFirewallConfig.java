@@ -87,7 +87,9 @@ public class DiameterFirewallConfig {
     public static SortedMap<String, KeyPair> destination_realm_decryption;
     public static String encryption_autodiscovery = "false";
     public static SortedMap<String, PublicKey> origin_realm_verify;
+    public static SortedMap<String, PublicKey> origin_realm_verify_signing_realm;
     public static SortedMap<String, KeyPair> origin_realm_signing;
+    public static SortedMap<String, String> origin_realm_signing_signing_realm;
     public static FirewallPolicy firewallPolicy = FirewallPolicy.DROP_SILENTLY;
     public static String honeypot_diameter_host = "";
     public static String honeypot_diameter_realm = "";
@@ -357,10 +359,12 @@ public class DiameterFirewallConfig {
         // ------------------------------------
         // Signing
         origin_realm_verify = new ConcurrentSkipListMap<String, PublicKey>();
+        origin_realm_verify_signing_realm = new ConcurrentSkipListMap<String, PublicKey>();
         try {
             List<Map<String, Object>> _origin_realm_verify = DiameterFirewallConfig.get("$.sigfw_configuration.signature_rules.origin_realm_verify");
             for (int i = 0; i < _origin_realm_verify.size(); i++) {
                 String origin_realm = (String)_origin_realm_verify.get(i).get("origin_realm");
+                String signing_realm = (String)_origin_realm_verify.get(i).get("signing_realm");
                 if (origin_realm != null) {
                     
                     PublicKey publicKey = null;
@@ -373,17 +377,22 @@ public class DiameterFirewallConfig {
                     } else if (publicKeyType.equals("EC")) {
                         publicKey = keyFactoryEC.generatePublic(pubKeySpec);
                     }
-                    origin_realm_verify.put(origin_realm, publicKey);
+                    if (origin_realm_verify.containsKey(origin_realm) == false) {
+                        origin_realm_verify.put(origin_realm, publicKey);
+                    }
+                    origin_realm_verify_signing_realm.put(origin_realm + ":" + signing_realm, publicKey);
                 }
             }
         } catch (InvalidKeySpecException ex) {
            Logger.getLogger(DiameterFirewallConfig.class.getName()).log(Level.SEVERE, null, ex);
         }
         origin_realm_signing = new ConcurrentSkipListMap<String, KeyPair>();
+        origin_realm_signing_signing_realm = new ConcurrentSkipListMap<String, String>();
         try {
             List<Map<String, Object>> _origin_realm_signing = DiameterFirewallConfig.get("$.sigfw_configuration.signature_rules.origin_realm_signing");
             for (int i = 0; i < _origin_realm_signing.size(); i++) {
                 String origin_realm = (String)_origin_realm_signing.get(i).get("origin_realm");
+                String signing_realm = (String)_origin_realm_signing.get(i).get("signing_realm");
                 if (origin_realm != null) {
                     
                     PrivateKey privateKey = null;
@@ -410,6 +419,7 @@ public class DiameterFirewallConfig {
                     
                     KeyPair keypair = new KeyPair(publicKey, privateKey);
                     origin_realm_signing.put(origin_realm, keypair);
+                    origin_realm_signing_signing_realm.put(origin_realm, signing_realm);
                 }
             }
         } catch (InvalidKeySpecException ex) {

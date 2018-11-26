@@ -109,6 +109,7 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.security.interfaces.ECPublicKey;
 import com.p1sec.sigfw.SigFW_interface.FirewallRulesInterface;
+import static diameterfw.DiameterFirewallConfig.origin_realm_signing_signing_realm;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.mobicents.protocols.sctp.netty.NettyAssociationImpl;
@@ -226,6 +227,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
     static final private int AVP_AUTO_ENCRYPTION_REALM = 1102;
     static final private int AVP_AUTO_ENCRYPTION_PUBLIC_KEY = 1103;
     static final private int AVP_AUTO_ENCRYPTION_PUBLIC_KEY_TYPE = 1104;
+    static final public int AVP_SIGNING_REALM = 1105;
 
     /**
      * Reset Unit Testing Flags
@@ -1297,7 +1299,20 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                     if (!orig_realm.equals("") && msg.isRequest()) {
                         // ------------- Diameter verify --------------
                         if (DiameterFirewallConfig.origin_realm_verify.containsKey(orig_realm)) {
-                            PublicKey publicKey = DiameterFirewallConfig.origin_realm_verify.get(orig_realm);
+                            if (msg.getAvps().getAvp(AVP_SIGNING_REALM) == null) {
+                                // Missing AVP_SIGNING_REALM, message dropped
+                                firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "Missing AVP_SIGNING_REALM, message dropped", lua_hmap);
+                                return;
+                            }
+                            String signing_realm;
+                            try {
+                                signing_realm = new String(msg.getAvps().getAvp(AVP_SIGNING_REALM).getOctetString());
+                            } catch (AvpDataException ex) {
+                                //java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+                                firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "Decoding error with AVP_SIGNING_REALM, message dropped", lua_hmap);
+                                return;
+                            }
+                            PublicKey publicKey = DiameterFirewallConfig.origin_realm_verify_signing_realm.get(orig_realm + ":" + signing_realm);
                             String r = crypto.diameterVerify(msg, publicKey);
                             if (!r.equals("")) {
                                 firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, r, lua_hmap);
@@ -1312,7 +1327,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                         // ------------- Diameter signing -------------
                         if (DiameterFirewallConfig.origin_realm_signing.containsKey(orig_realm)) {
                             KeyPair keyPair = DiameterFirewallConfig.origin_realm_signing.get(orig_realm);
-                            crypto.diameterSign(msg, keyPair);
+                            crypto.diameterSign(msg, keyPair, origin_realm_signing_signing_realm.get(orig_realm));
                         }
                         // --------------------------------------------
                     }
@@ -1399,7 +1414,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                             // --------- Add also Diameter signature ------------
                             if (DiameterFirewallConfig.origin_realm_signing.containsKey(orig_realm)) {
                                 KeyPair keyPair = DiameterFirewallConfig.origin_realm_signing.get(orig_realm);
-                                crypto.diameterSign(message, keyPair);
+                                crypto.diameterSign(message, keyPair, DiameterFirewallConfig.origin_realm_signing_signing_realm.get(orig_realm));
                             }
                             // --------------------------------------------------
 

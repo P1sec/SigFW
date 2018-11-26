@@ -47,7 +47,7 @@ public interface CryptoInterface {
      * @param message Diameter message which will be signed
      * @param keyPair KeyPair used to sign message
      */
-    public void diameterSign(Message message, KeyPair keyPair);
+    public void diameterSign(Message message, KeyPair keyPair, String signingRealm);
     
     /**
      * Method to verify the Diameter message signature

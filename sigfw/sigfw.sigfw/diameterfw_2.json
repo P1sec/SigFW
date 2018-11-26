@@ -125,6 +125,8 @@
 			"origin_realm_verify": [
 				{
 					"origin_realm": "exchangeClient.example.org",
+					"signing_realm_comment": "Subject name which is issuing signature",
+					"signing_realm": "exchangeClient.example.org",
 					"public_key_type": "RSA",
 					"public_key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCm/PAsXOj7cjirJsQsiIeHauFNLwBIuM1brkUm3aVXeraDIeJ2BWXmWlKMmX/FRZh4Qhe9mUy6YgwTO8PndWdMDRWMw8vvXJFI7HPJpsNfcBykefSqhr5X4h6HyQr73V8O0U5PtgCBuVoyuOFIj87WFwaLuajHiQgps7NOloeH1wIDAQAB"
 				}
@@ -132,6 +134,8 @@
 			"origin_realm_signing": [
 				{
 					"origin_realm": "exchange.example.org",
+					"signing_realm_comment": "Subject name which is issuing signature",
+					"signing_realm": "exchange.example.org",
 					"public_key_type": "RSA",
 					"public_key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCm/PAsXOj7cjirJsQsiIeHauFNLwBIuM1brkUm3aVXeraDIeJ2BWXmWlKMmX/FRZh4Qhe9mUy6YgwTO8PndWdMDRWMw8vvXJFI7HPJpsNfcBykefSqhr5X4h6HyQr73V8O0U5PtgCBuVoyuOFIj87WFwaLuajHiQgps7NOloeH1wIDAQAB",
 					"private_key_type": "RSA",
