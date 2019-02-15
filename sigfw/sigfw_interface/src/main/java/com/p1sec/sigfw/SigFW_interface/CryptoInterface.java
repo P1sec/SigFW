@@ -27,7 +27,8 @@ package com.p1sec.sigfw.SigFW_interface;
 import java.security.InvalidKeyException;
 import java.security.KeyPair;
 import java.security.PublicKey;
-import javafx.util.Pair;
+//import javafx.util.Pair;
+import java.util.AbstractMap;
 import org.jdiameter.api.Message;
 import org.mobicents.protocols.ss7.sccp.LongMessageRuleType;
 import org.mobicents.protocols.ss7.sccp.impl.message.MessageFactoryImpl;
@@ -116,7 +117,7 @@ public interface CryptoInterface {
      * @param lmrt Long Message Rule Type, if UDT or XUDT should be send
      * @return pair<message, lmrt> - message and indicator if UDT or XUDT should be send
      */    
-    public Pair<SccpDataMessage, LongMessageRuleType> tcapEncrypt(SccpDataMessage message, MessageFactoryImpl sccpMessageFactory, PublicKey publicKey, LongMessageRuleType lmr);
+    public AbstractMap.SimpleEntry<SccpDataMessage, LongMessageRuleType> tcapEncrypt(SccpDataMessage message, MessageFactoryImpl sccpMessageFactory, PublicKey publicKey, LongMessageRuleType lmr);
     
     /**
      * Method to decrypt TCAP message.
@@ -127,5 +128,5 @@ public interface CryptoInterface {
      * @param keyPair Key Pair
      * @return pair<message, result> - message and result indicator
      */    
-    public Pair<SccpDataMessage, String> tcapDecrypt(SccpDataMessage message, MessageFactoryImpl sccpMessageFactory, KeyPair keyPair);
+    public AbstractMap.SimpleEntry<SccpDataMessage, String> tcapDecrypt(SccpDataMessage message, MessageFactoryImpl sccpMessageFactory, KeyPair keyPair);
 }

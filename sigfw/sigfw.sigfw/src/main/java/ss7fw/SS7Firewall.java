@@ -285,7 +285,9 @@ import com.p1sec.sigfw.SigFW_interface.FirewallRulesInterface;
 import java.security.interfaces.ECPublicKey;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import javafx.util.Pair;
+//import javafx.util.Pair;
+import com.sun.tools.javac.util.Pair;
+import java.util.AbstractMap;
 import org.mobicents.protocols.sctp.netty.NettySctpManagementImpl;
 import sigfw.common.Crypto;
 /**
@@ -1071,7 +1073,7 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
                     if (message.getCalledPartyAddress().getGlobalTitle() != null) {
                         KeyPair keyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.called_gt_decryption, message.getCalledPartyAddress().getGlobalTitle().getDigits());
                         if (keyPair != null) {
-                            Pair<SccpDataMessage, String> p = crypto.tcapDecrypt(message, SS7Firewall.sccpMessageFactory, keyPair);
+                            AbstractMap.SimpleEntry<SccpDataMessage, String> p = crypto.tcapDecrypt(message, SS7Firewall.sccpMessageFactory, keyPair);
                             message = p.getKey();
                             String r = p.getValue();
                             if (!r.equals("")) {
@@ -1727,7 +1729,7 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
                     if (message.getCalledPartyAddress().getGlobalTitle() != null) {
                         PublicKey publicKey = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.called_gt_encryption, message.getCalledPartyAddress().getGlobalTitle().getDigits());
                         if (publicKey != null) {
-                            Pair<SccpDataMessage, LongMessageRuleType> p = crypto.tcapEncrypt(message, sccpMessageFactory, publicKey, lmrt);
+                            AbstractMap.SimpleEntry<SccpDataMessage, LongMessageRuleType> p = crypto.tcapEncrypt(message, sccpMessageFactory, publicKey, lmrt);
                             message = p.getKey();
                             lmrt = p.getValue();
                         }

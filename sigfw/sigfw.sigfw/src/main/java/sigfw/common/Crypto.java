@@ -52,7 +52,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.logging.Level;
-import javafx.util.Pair;
+//import javafx.util.Pair;
+import java.util.AbstractMap;
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
@@ -1202,10 +1203,10 @@ public class Crypto implements CryptoInterface {
      * @param sccpMessageFactory SCCP message factory
      * @param publicKey Public Key
      * @param lmrt Long Message Rule Type, if UDT or XUDT should be send
-     * @return pair<message, lmrt> - message and indicator if UDT or XUDT should be send
+     * @return AbstractMap.SimpleEntry<message, lmrt> - message and indicator if UDT or XUDT should be send
      */    
     @Override
-    public Pair<SccpDataMessage, LongMessageRuleType> tcapEncrypt(SccpDataMessage message, MessageFactoryImpl sccpMessageFactory, PublicKey publicKey, LongMessageRuleType lmrt) {
+    public AbstractMap.SimpleEntry<SccpDataMessage, LongMessageRuleType> tcapEncrypt(SccpDataMessage message, MessageFactoryImpl sccpMessageFactory, PublicKey publicKey, LongMessageRuleType lmrt) {
         logger.debug("TCAP Encryption for SCCP Called GT = " + message.getCalledPartyAddress().getGlobalTitle().getDigits());
         
         // Encryption RSA
@@ -1268,10 +1269,10 @@ public class Crypto implements CryptoInterface {
                 l = LongMessageRuleType.XUDT_ENABLED;
             } else if (publicKey instanceof ECPublicKey) {
                 logger.warn("EC algorithm not implemented");
-                return new Pair<>(message, lmrt);
+                return new AbstractMap.SimpleEntry<>(message, lmrt);
             } else {
                 logger.warn("Unknown Public Key algorithm");
-                return new Pair<>(message, lmrt);
+                return new AbstractMap.SimpleEntry<>(message, lmrt);
             }
         } catch (InvalidKeyException ex) {
             java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
@@ -1280,7 +1281,7 @@ public class Crypto implements CryptoInterface {
         } catch (BadPaddingException ex) {
             java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
         }
-        return new Pair<>(message, lmrt);
+        return new AbstractMap.SimpleEntry<>(message, lmrt);
     }
     
     
@@ -1291,9 +1292,9 @@ public class Crypto implements CryptoInterface {
      * @param message SCCP message
      * @param sccpMessageFactory SCCP message factory
      * @param keyPair Key Pair
-     * @return pair<message, result> - message and result indicator
+     * @return AbstractMap.SimpleEntry<message, result> - message and result indicator
      */    
-    public Pair<SccpDataMessage, String> tcapDecrypt(SccpDataMessage message, MessageFactoryImpl sccpMessageFactory, KeyPair keyPair) {
+    public AbstractMap.SimpleEntry<SccpDataMessage, String> tcapDecrypt(SccpDataMessage message, MessageFactoryImpl sccpMessageFactory, KeyPair keyPair) {
         logger.debug("TCAP Decryption for SCCP Called GT = " + message.getCalledPartyAddress().getGlobalTitle().getDigits());
 
         // Encryption RSA
@@ -1371,7 +1372,7 @@ public class Crypto implements CryptoInterface {
                         t_tvp = ((t_tvp << 8) + (TVP[i] & 0xff));
                     }
                     if (Math.abs(t_tvp - t) > tcap_tvp_time_window * 10) {
-                        return new Pair<>(message, "SS7 FW: Blocked in decryption, Wrong timestamp in TVP (received: " + t_tvp + ", current: " + t + ")");
+                        return new AbstractMap.SimpleEntry<>(message, "SS7 FW: Blocked in decryption, Wrong timestamp in TVP (received: " + t_tvp + ", current: " + t + ")");
                     }
                     d = Arrays.copyOfRange(d, TVP.length, d.length);
                     // ---- End of Verify TVP ----
@@ -1383,10 +1384,10 @@ public class Crypto implements CryptoInterface {
                 }
             }  else if (privateKey instanceof ECPrivateKey) {
                 logger.warn("EC algorithm not implemented");
-                return new Pair<>(message, ""); 
+                return new AbstractMap.SimpleEntry<>(message, ""); 
             } else {
                 logger.warn("Unknown Private Key algorithm");
-                return new Pair<>(message, ""); 
+                return new AbstractMap.SimpleEntry<>(message, ""); 
             }
 
         } catch (InvalidKeyException ex) {
@@ -1399,6 +1400,6 @@ public class Crypto implements CryptoInterface {
             logger.info("TCAP FW: TCAP decryption failed for SCCP Called GT: " + message.getCalledPartyAddress().getGlobalTitle().getDigits() + " BadPaddingException: " + ex.getMessage());
             //java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
         }
-        return new Pair<>(message, "");         
+        return new AbstractMap.SimpleEntry<>(message, "");         
     }
 }
