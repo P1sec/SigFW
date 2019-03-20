@@ -28,6 +28,7 @@
  */
 package diameterfw;
 
+import static diameterfw.DiameterClient.hexStringToByteArray;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -272,14 +273,17 @@ private static void configLog4j() {
 	 */
 	@Override
 	public Answer processRequest(Request request) {
-            dumpMessage(request,false);
-            if (request.getCommandCode() != commandCode) {
+            dumpMessage(request, false);
+            /*if (request.getCommandCode() != commandCode) {
                 log.error("Received bad answer: " + request.getCommandCode());
                 return null;
-            }
-            AvpSet requestAvpSet = request.getAvps();
+            }*/
+            //AvpSet requestAvpSet = request.getAvps();
+            
+            Answer answer = createAnswer(request, 2001, EXCHANGE_TYPE_INITIAL); 
+            return answer;
 
-            Avp exchangeTypeAvp = requestAvpSet.getAvp(exchangeTypeCode, vendorID);
+            /*Avp exchangeTypeAvp = requestAvpSet.getAvp(exchangeTypeCode, vendorID);
             Avp exchangeDataAvp = requestAvpSet.getAvp(exchangeDataCode, vendorID);
             if (exchangeTypeAvp == null) {
                 log.error("Request does not have Exchange-Type");
@@ -378,8 +382,8 @@ private static void configLog4j() {
                 e.printStackTrace();
             }
             //error, something bad happened.
-            finished = true;
-            return null;
+            finished = true;*/
+            //return null;
 	}
 
 	private Answer createAnswer(Request r, int resultCode, int enumType) {
@@ -387,13 +391,13 @@ private static void configLog4j() {
             AvpSet answerAvps = answer.getAvps();
             // code , value , vendor, mandatory,protected,isUnsigned32
             // (Enumerated)
-            Avp exchangeType = answerAvps.addAvp(exchangeTypeCode, (long) enumType, vendorID, true, false, true); // value
+            //Avp exchangeType = answerAvps.addAvp(exchangeTypeCode, (long) enumType, vendorID, true, false, true); // value
                                                                                                                                                                                                                             // is
                                                                                                                                                                                                                             // set
                                                                                                                                                                                                                             // on
                                                                                                                                                                                                                             // creation
             // code , value , vendor, mandatory,protected, isOctetString
-            Avp exchengeData = answerAvps.addAvp(exchangeDataCode, TO_RECEIVE[toReceiveIndex], vendorID, true, false, false); // value
+            //Avp exchengeData = answerAvps.addAvp(exchangeDataCode, TO_RECEIVE[toReceiveIndex], vendorID, true, false, false); // value
                                                                                                                                                                                                                                                     // is
                                                                                                                                                                                                                                                     // set
                                                                                                                                                                                                                                                     // on
@@ -403,8 +407,26 @@ private static void configLog4j() {
             //add origin, its required by duplicate detection
             //answerAvps.addAvp(Avp.ORIGIN_HOST, stack.getMetaData().getLocalPeer().getUri().getFQDN(), true, false, true);
             //answerAvps.addAvp(Avp.ORIGIN_REALM, stack.getMetaData().getLocalPeer().getRealmName(), true, false, true);
-            answerAvps.addAvp(Avp.ORIGIN_HOST, r.getAvps().getAvp(Avp.ORIGIN_HOST).getRawData());
-            answerAvps.addAvp(Avp.ORIGIN_REALM, r.getAvps().getAvp(Avp.ORIGIN_REALM).getRawData());
+            
+            // This part is not working because of jDiameter routing
+            if (r.getAvps().getAvp(Avp.DESTINATION_HOST) != null) {
+                answerAvps.addAvp(Avp.ORIGIN_HOST, r.getAvps().getAvp(Avp.DESTINATION_HOST).getRawData());
+            }
+            if (r.getAvps().getAvp(Avp.DESTINATION_REALM) != null) {
+                answerAvps.addAvp(Avp.ORIGIN_REALM, r.getAvps().getAvp(Avp.DESTINATION_REALM).getRawData());
+            }
+            if (r.getAvps().getAvp(Avp.ORIGIN_HOST) != null) {
+                answerAvps.addAvp(Avp.DESTINATION_HOST, r.getAvps().getAvp(Avp.ORIGIN_HOST).getRawData());
+            }
+            
+            // This one is working
+            if (r.getAvps().getAvp(Avp.ORIGIN_REALM) != null) {
+                answerAvps.addAvp(Avp.DESTINATION_REALM, r.getAvps().getAvp(Avp.ORIGIN_REALM).getRawData());
+            }
+            
+            byte[] b = hexStringToByteArray("31313131313131313131313131313131");
+            answerAvps.addAvp(1, b, true, false);
+               
             return answer;
 	}
 }

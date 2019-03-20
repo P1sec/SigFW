@@ -224,9 +224,18 @@ public class DiameterClient implements EventListener<Request, Answer> {
                         // TODO Auto-generated catch block
                     e.printStackTrace();
                 }
-                //do send
-                this.session = this.factory.getNewSession("BadCustomSessionId;YesWeCanPassId;" + System.currentTimeMillis());
-                sendNextRequest(EXCHANGE_TYPE_INITIAL);
+                for (int i = 0; i < 1000; i++) {
+                    //do send
+                    this.session = this.factory.getNewSession("BadCustomSessionId;YesWeCanPassId;" + System.currentTimeMillis());
+                    sendNextRequest(EXCHANGE_TYPE_INITIAL);
+                    
+                    try {
+                        Thread.currentThread().sleep(5000);
+                    } catch (InterruptedException e) {
+                            // TODO Auto-generated catch block
+                        e.printStackTrace();
+                    }
+                }
             } catch (InternalException e) {
                 // TODO Auto-generated catch block
                 e.printStackTrace();
@@ -275,7 +284,7 @@ public class DiameterClient implements EventListener<Request, Answer> {
             Avp exchangeType = requestAvps.addAvp(exchangeTypeCode, (long) enumType, vendorID, true, false, true);
             
             // code , value , vendor, mandatory,protected, isOctetString
-            Avp exchengeData = requestAvps.addAvp(exchangeDataCode, TO_SEND[toSendIndex++], vendorID, true, false, false);
+            Avp exchengeData = requestAvps.addAvp(exchangeDataCode, TO_SEND[(toSendIndex++)%(TO_SEND.length)], vendorID, true, false, false);
                                                                                                                                                                                                                                             
             // creation
             // send

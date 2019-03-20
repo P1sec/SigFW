@@ -80,7 +80,7 @@ For the list of contributors, see the AUTHORS file.
 
 Original work was created by Martin Kacer, Philippe Langlois
 
-Copyright 2018, P1 Security S.A.S and individual contributors
+Copyright 2019, P1 Security S.A.S and individual contributors
 
 We would like to thanks for everyone supporting this project.
 

@@ -65,14 +65,14 @@ import org.slf4j.LoggerFactory;
  * @author <a href="mailto:brainslog@gmail.com"> Alexandre Mendonca </a>
  * @author <a href="mailto:baranowb@gmail.com"> Bartosz Baranowski </a>
  */
-class AvpImpl implements Avp {
+public class AvpImpl implements Avp {
 
   private static final long serialVersionUID = 1L;
   private static final ElementParser parser = new ElementParser();
   int avpCode;
-  long vendorID;
+  public long vendorID;
 
-  boolean isMandatory = false;
+  public boolean isMandatory = false;
   boolean isEncrypted = false;
   boolean isVendorSpecific = false;
 
@@ -81,7 +81,7 @@ class AvpImpl implements Avp {
 
   private static final Logger logger = LoggerFactory.getLogger(AvpImpl.class);
 
-  AvpImpl(int code, int flags, long vnd, byte[] data) {
+  public AvpImpl(int code, int flags, long vnd, byte[] data) {
     avpCode  = code;
     //
     isMandatory = (flags & 0x40) != 0;

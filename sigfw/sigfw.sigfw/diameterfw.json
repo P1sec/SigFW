@@ -128,7 +128,10 @@
 					"private_key": "MIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBAKb88Cxc6PtyOKsmxCyIh4dq4U0vAEi4zVuuRSbdpVd6toMh4nYFZeZaUoyZf8VFmHhCF72ZTLpiDBM7w+d1Z0wNFYzDy+9ckUjsc8mmw19wHKR59KqGvlfiHofJCvvdXw7RTk+2AIG5WjK44UiPztYXBou5qMeJCCmzs06Wh4fXAgMBAAECgYBwNrkOlsDZd8AtAzgA1R5+GYydWWBPfiBB47IElB1v076iEDsmJCp9yWR/pwb9ge8boQ5jEolFFm4W3qqe934ZvBkJaL38zqI3rjZJJ7c9uJwr3ldmREFZa5U8l9tnvlck1b9QW0KDvjt+1Q547+eFlgQaqY5QfY+9D3rpdkZYwQJBAO/2PyNrYlHmVGZOt6foJLv3w4uMkTuleVH9Qu9TOQiv5wyCPTmMDMzW3AwPlFNaZI6YqqYYPUpyI1T0vWVpfS0CQQCyJhtwb5Xxg+b9NGuGmMqJ9GVzYwDPufhMDp7CDDaRKwV3q7eOtsasEGZX64ZkuVRL9xssKLunoqiT5c9z5aOTAkEApf060692hZzEiTiuhjFpJ7VNyPxlglMGxxZf9NkmvMGhG+ADpgkg2ZlPAfDM85O1t4YXlWlzDEpD8oKReNMtyQJAQZN9bjnk++4NzQ7KtdTwWS+5WGwNFGnkWDrZfZx5SZ6IeLCg9Mua/iNbSOnNoq4FtaDUQ8EKsn5Rh3+EiajyOQJAB/dZABQVKyvDAN4s3rXWsrGSuMzGoNCBf1Min1cnWhW2ndE7XC9szNsDGn7sCXmpjwdb7SA6iuh7yrH0YAiOgQ=="
 				}
 			],
-			"autodiscovery": "true"
+			"autodiscovery_comment": "# If enabled, then the special diameter command code is used to retrieve the foreign SigFW encryption public key.",
+			"autodiscovery": "true",
+			"dtls_encryption_comment": "# If dtls_encryption is enabled, than the autodiscovery is not used anymore. DTLS handshake in Diameter protocol is used instead. For DTLS handshake the trustore and keystore is used. After successful handshake the DTLS encryption is used. Signature_rules, can be still used together with DTLS, however DTLS provides also integrity protection so they are not mandatory.",
+			"dtls_encryption": "true"
 		},
 		"signature_rules": {
 			"origin_realm_verify": [

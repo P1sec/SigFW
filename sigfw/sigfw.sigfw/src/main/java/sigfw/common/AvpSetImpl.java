@@ -74,7 +74,7 @@ import org.jdiameter.client.impl.parser.ElementParser;
  * @author <a href="mailto:baranowb@gmail.com"> Bartosz Baranowski </a>
  * @author <a href="mailto:grzegorz.figiel@pro-ids.com"> Grzegorz Figiel [ProIDS] </a>
  */
-class AvpSetImpl implements AvpSet {
+public class AvpSetImpl implements AvpSet {
 
   // FIXME: by default 3588.4-1 says: 'M' should be set to true;
   // FIXME: by default 3588.x says: if grouped has at least on AVP with 'M' set, it also has to have 'M' set! - TODO: add backmapping.
@@ -84,7 +84,7 @@ class AvpSetImpl implements AvpSet {
 
   List<Avp> avps = new ArrayList<Avp>();
 
-  AvpSetImpl() {
+  public AvpSetImpl() {
 
   }
 

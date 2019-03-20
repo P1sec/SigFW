@@ -86,6 +86,7 @@ public class DiameterFirewallConfig {
     public static SortedMap<String, PublicKey> destination_realm_encryption;
     public static SortedMap<String, KeyPair> destination_realm_decryption;
     public static String encryption_autodiscovery = "false";
+    public static String dtls_encryption = "false";
     public static SortedMap<String, PublicKey> origin_realm_verify;
     public static SortedMap<String, PublicKey> origin_realm_verify_signing_realm;
     public static SortedMap<String, KeyPair> origin_realm_signing;
@@ -354,6 +355,7 @@ public class DiameterFirewallConfig {
         }
         
         encryption_autodiscovery = (String)DiameterFirewallConfig.get("$.sigfw_configuration.encryption_rules.autodiscovery");
+        dtls_encryption = (String)DiameterFirewallConfig.get("$.sigfw_configuration.encryption_rules.dtls_encryption");
             
         // ------------------------------------
         // ------------------------------------

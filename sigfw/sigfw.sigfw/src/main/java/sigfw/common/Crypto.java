@@ -100,15 +100,15 @@ public class Crypto implements CryptoInterface {
     public static Signature signatureECDSA;
     */
     
-    static final private int AVP_ENCRYPTED = 1100;
-    static final private int AVP_ENCRYPTED_GROUPED = 1101;
-    static final private int AVP_ENCRYPTED_GROUPED_INDEXED = 1102;
-    static final private int AVP_SIGNATURE = 1000;
+    static final public int AVP_ENCRYPTED = 1100;
+    static final public int AVP_ENCRYPTED_GROUPED = 1101;
+    static final public int AVP_ENCRYPTED_GROUPED_INDEXED = 1102;
+    static final public int AVP_SIGNATURE = 1000;
     
     static final private Long OC_SIGNATURE = 100L;
     
     // Diameter signature and decryption time window used for TVP
-    private final static long diameter_tvp_time_window = 30;  // in seconds
+    public final static long diameter_tvp_time_window = 30;  // in seconds
     
     // TCAP signature and decryption time window used for TVP
     private final static long tcap_tvp_time_window = 30;  // in seconds
