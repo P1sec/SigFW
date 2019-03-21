@@ -29,6 +29,7 @@ import java.security.KeyPair;
 import java.security.PublicKey;
 //import javafx.util.Pair;
 import java.util.AbstractMap;
+import java.util.SortedMap;
 import org.jdiameter.api.Message;
 import org.mobicents.protocols.ss7.sccp.LongMessageRuleType;
 import org.mobicents.protocols.ss7.sccp.impl.message.MessageFactoryImpl;
@@ -47,6 +48,7 @@ public interface CryptoInterface {
      * 
      * @param message Diameter message which will be signed
      * @param keyPair KeyPair used to sign message
+     * @param signingRealm Diameter realm signing the message
      */
     public void diameterSign(Message message, KeyPair keyPair, String signingRealm);
     
@@ -55,10 +57,10 @@ public interface CryptoInterface {
      * 
      * 
      * @param message Diameter message which will be verified
-     * @param publicKey Public Key used to verify message signature
+     * @param SortedMap<String, PublicKey> Public Key hash map, used to verify message signature
      * @return result, empty string if successful, otherwise error message
      */
-    public String diameterVerify(Message message, PublicKey publicKey);
+    public String diameterVerify(Message message, SortedMap<String, PublicKey> publicKeys);
  
     
     /**

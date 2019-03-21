@@ -26,7 +26,7 @@ package sigfw.common;
 
 import com.p1sec.sigfw.SigFW_interface.CryptoInterface;
 import diameterfw.DiameterFirewall;
-import static diameterfw.DiameterFirewall.AVP_SIGNING_REALM;
+import static diameterfw.DiameterFirewall.AVP_DESS_SIGNING_REALM;
 import diameterfw.DiameterFirewallConfig;
 import java.io.IOException;
 import java.io.InputStream;
@@ -54,6 +54,7 @@ import java.util.Properties;
 import java.util.logging.Level;
 //import javafx.util.Pair;
 import java.util.AbstractMap;
+import java.util.SortedMap;
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
@@ -103,7 +104,9 @@ public class Crypto implements CryptoInterface {
     static final public int AVP_ENCRYPTED = 1100;
     static final public int AVP_ENCRYPTED_GROUPED = 1101;
     static final public int AVP_ENCRYPTED_GROUPED_INDEXED = 1102;
-    static final public int AVP_SIGNATURE = 1000;
+    static final public int AVP_DESS_SIGNATURE = 1000;
+    static final public int AVP_DESS_DIGITAL_SIGNATURE = 1001;
+    static final public int AVP_DESS_SYSTEM_TIME = 1002;
     
     static final private Long OC_SIGNATURE = 100L;
     
@@ -185,23 +188,25 @@ public class Crypto implements CryptoInterface {
             PrivateKey privateKey = keyPair.getPrivate();
             if(privateKey != null) {
                 
-                AvpSet avps = message.getAvps();
+                AvpSet _avps = message.getAvps();
                 
-                avps.addAvp(AVP_SIGNING_REALM, signingRealm.getBytes());
+                // Add DESS_SIGNATURE grouped AVP
+                AvpSet avps = _avps.addGroupedAvp(AVP_DESS_SIGNATURE, false, false);
+                
+                // Add DESS_SIGNING_REALM inside
+                avps.addAvp(AVP_DESS_SIGNING_REALM, signingRealm.getBytes());
 
                 boolean signed = false;
-                for (int i = 0; i < avps.size(); i++) {
-                    Avp a = avps.getAvpByIndex(i);
-                    if (a.getCode() == AVP_SIGNATURE) {
-                        signed = true;
-                        break;
-                    }
+                if (avps.getAvp(AVP_DESS_DIGITAL_SIGNATURE) != null) {
+                    signed = true;
                 }
                 
                 if (!signed) {
+                    /*
                     // Reserved (currently not used) - Signature Version
                     // TODO
                     byte[] VER = {0x00, 0x00, 0x00, 0x01};
+                    */
                     
                     // TVP
                     byte[] TVP = {0x00, 0x00, 0x00, 0x00};
@@ -216,6 +221,9 @@ public class Crypto implements CryptoInterface {
                     for (int j = 0; j < TVP.length; j++) {
                         t_tvp =  ((t_tvp << 8) + (TVP[j] & 0xff));
                     }
+                    
+                    // Add DESS_SYSTEM_TIME inside
+                    avps.addAvp(AVP_DESS_SYSTEM_TIME, TVP);
                     
                     // Signature             
                     try {       
@@ -235,12 +243,6 @@ public class Crypto implements CryptoInterface {
                              dataToSign += ":" + s;
                         }
 
-                        /*for (int i = 0; i < avps.size(); i++) {
-                            Avp a = avps.getAvpByIndex(i);
-                            if (a.getCode() != Avp.ROUTE_RECORD) {
-                                dataToSign += ":" + Base64.getEncoder().encodeToString(a.getRawData());
-                            }
-                        }*/
 
                         byte[] signatureBytes = null;
                         // RSA
@@ -252,9 +254,11 @@ public class Crypto implements CryptoInterface {
                         }
                         // EC
                         else if (privateKey instanceof ECPrivateKey) {
+                            _avps.removeAvp(AVP_DESS_SIGNATURE);
                             logger.warn("EC Public Key algorithm not implemented");
                             return;
                         } else {
+                            _avps.removeAvp(AVP_DESS_SIGNATURE);
                             logger.warn("Unknown Private Key algorithm");
                             return;
                         }
@@ -262,11 +266,14 @@ public class Crypto implements CryptoInterface {
                         logger.debug("Adding Diameter Signed Data: " + dataToSign);
                         logger.debug("Adding Diameter Signature: " + Base64.getEncoder().encodeToString(signatureBytes));
 
-                        avps.addAvp(AVP_SIGNATURE, concatByteArray(VER, concatByteArray(TVP, signatureBytes)));
+                        // Add AVP_DESS_SIGNATURE inside
+                        avps.addAvp(AVP_DESS_DIGITAL_SIGNATURE, signatureBytes);
 
                     } catch (InvalidKeyException ex) {
+                        _avps.removeAvp(AVP_DESS_SIGNATURE);
                         java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
                     } catch (SignatureException ex) {
+                        _avps.removeAvp(AVP_DESS_SIGNATURE);
                         java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
                     }
                 }        
@@ -275,10 +282,10 @@ public class Crypto implements CryptoInterface {
     }
     
     @Override
-    public String diameterVerify(Message message, PublicKey publicKey) {
+    public String diameterVerify(Message message, SortedMap<String, PublicKey> publicKeys) {
         //logger.debug("Message Verify = " + message.getAvps().toString());
         
-        if (publicKey == null) {
+        if (publicKeys == null) {
             return "";
         }
         
@@ -292,117 +299,147 @@ public class Crypto implements CryptoInterface {
             java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
         }
         
-        List<Integer> signed_index = new ArrayList<Integer>();
+        AvpSet _avps = message.getAvps();
         
-        AvpSet avps = message.getAvps();
-
-        for (int i = 0; i < avps.size(); i++) {
-            Avp a = avps.getAvpByIndex(i);
-            if (a.getCode() == AVP_SIGNATURE) {
-                signed_index.add(i);
-            }
-        } 
-        
-        if (signed_index.size() > 0) {
-            try {
-                // read signature component
-                Avp a = avps.getAvpByIndex(signed_index.get(0));
-                byte[] ad;
-
-                ad = a.getOctetString();
-
-                byte[] signatureBytes = null;
-                long t_tvp = 0;
-                byte[] TVP = {0x00, 0x00, 0x00, 0x00};
-                
-                // Reserved (currently not used) - Signature Version
-                // TODO
-                int pos = 0;
-                byte[] VER = {0x00, 0x00, 0x00, 0x01};
-                
-                pos = 4;
-                // TVP
-                if (ad != null && ad.length > TVP.length + pos) {
-                    // ---- Verify TVP from Security header ----
-                    long t = System.currentTimeMillis()/100;    // in 0.1s
-                    TVP[0] = (byte) ((t >> 24) & 0xFF);
-                    TVP[1] = (byte) ((t >> 16) & 0xFF);
-                    TVP[2] = (byte) ((t >>  8) & 0xFF);
-                    TVP[3] = (byte) ((t >>  0) & 0xFF);
-                    t = 0;
-                    for (int i = 0; i < TVP.length; i++) {
-                        t =  ((t << 8) + (TVP[i] & 0xff));
-                    }
-
-                    for (int i = 0; i < TVP.length; i++) {
-                        t_tvp =  ((t_tvp << 8) + (ad[i + pos] & 0xff));
-                    }
-                    
-                    if (Math.abs(t_tvp-t) > diameter_tvp_time_window*10) {
-                        return "DIAMETER FW: DIAMETER verify signature. Wrong timestamp in TVP (received: " + t_tvp + ", current: " + t + ")";
-                    }
-                    // ---- End of Verify TVP ----
-                }
-
-            
-                // Signature
-                if (ad != null) {
-                    signatureBytes = Arrays.copyOfRange(ad, TVP.length + pos, ad.length);
-                }
-
-                // remove all signature components
-                for (int i = 0; i < signed_index.size(); i++) {
-                    avps.removeAvpByIndex(signed_index.get(i));
-                }
-                
-                // verify signature
-                String dataToSign = message.getApplicationId() + ":" + message.getCommandCode() + ":" + message.getEndToEndIdentifier() + ":" + t_tvp;
-                
-                // jDiameter AVPs are not ordered, so order AVPs by sorting base64 strings
-                List<String> strings = new ArrayList<String>();
-                for (int i = 0; i < avps.size(); i++) {
-                    a = avps.getAvpByIndex(i);
-                    if (a.getCode() != Avp.ROUTE_RECORD) {
-                        strings.add(a.getCode() + "|" + Base64.getEncoder().encodeToString(a.getRawData()));
-                    }
-                }
-                Collections.sort(strings);
-                for (String s : strings) {
-                     dataToSign += ":" + s;
-                }
-
-                /*for (int i = 0; i < avps.size(); i++) {
-                    Avp a = avps.getAvpByIndex(i);
-                    if (a.getCode() != Avp.ROUTE_RECORD) {
-                        dataToSign += ":" + Base64.getEncoder().encodeToString(a.getRawData());
-                    }
-                }*/
-                
-                // remove AVP_SIGNING_REALM;
-                avps.removeAvp(AVP_SIGNING_REALM);
-                
-                if (publicKey instanceof RSAPublicKey) {
-                    signatureRSA.initVerify(publicKey);
-                    signatureRSA.update(dataToSign.getBytes());
-                    if (signatureBytes != null && signatureRSA.verify(signatureBytes)) {
-                        return "";
-                    }
-                } else if (publicKey instanceof ECPublicKey) {
-                    logger.warn("EC Public Key algorithm not implemented");
-                    return "";
-                } else {
-                    logger.warn("Unknown Public Key algorithm");
-                    return "";
-                }
-                
-            } catch (InvalidKeyException ex) {
-                java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
-            } catch (SignatureException ex) {
-                java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
-            } catch (AvpDataException ex) {
-                java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
-            }
+        Avp _a = _avps.getAvp(AVP_DESS_SIGNATURE);
+        if (_a == null) {
+            logger.debug("");
+            return "DIAMETER FW: Missing DIAMETER signature (AVP_DESS_SIGNATURE).";
         }
+        AvpSet avps = null;
+        try {
+            avps = _a.getGrouped();
+        } catch (AvpDataException ex) {
+            return "DIAMETER FW: Wrong DIAMETER signature. AVP_DESS_SIGNATURE is not grouped AVP.";
+        }
+
+        try {
+            // Find signing realm
+            String signing_realm = null;
+            String orig_realm = null;
+
+            Avp a_origin_realm = avps.getAvp(Avp.ORIGIN_REALM);
+            if (a_origin_realm != null && a_origin_realm.getDiameterURI() != null && a_origin_realm.getDiameterURI().getFQDN() != null) {
+                orig_realm = a_origin_realm.getDiameterURI().getFQDN();
+            }
+            Avp a_signing_realm = avps.getAvp(AVP_DESS_SIGNING_REALM);
+            if (a_signing_realm != null && a_signing_realm.getDiameterURI() != null && a_signing_realm.getDiameterURI().getFQDN() != null) {
+                signing_realm = a_signing_realm.getDiameterURI().getFQDN();
+            } else if (orig_realm != null) {
+                signing_realm = orig_realm;
+            } else {
+                return "DIAMETER FW: Unable to verify message signature. Both AVP_DESS_SIGNING_REALM and ORIGIN_REALM are missing.";
+            }
+            //
+
+            // get timestamp
+            Avp a_system_time = avps.getAvp(AVP_DESS_SYSTEM_TIME);
+            if (a_system_time == null) {
+                return "DIAMETER FW: Invbalid message signature. Missing AVP_DESS_SYSTEM_TIME.";
+            }
+            //
+
+            // Get signature payload
+            Avp a_digital_signature = avps.getAvp(AVP_DESS_DIGITAL_SIGNATURE);
+            if (a_digital_signature == null) {
+                return "DIAMETER FW: Invbalid message signature. Missing AVP_DESS_DIGITAL_SIGNATURE.";
+            }
+            //
+
+            // Verify timestamp
+            byte[] t_ad;
+            t_ad = a_system_time.getOctetString();
+
+            byte[] signatureBytes = null;
+            long t_tvp = 0;
+            byte[] TVP = {0x00, 0x00, 0x00, 0x00};
+
+            /*
+            // Reserved (currently not used) - Signature Version
+            // TODO
+            int pos = 0;
+            byte[] VER = {0x00, 0x00, 0x00, 0x01};
+
+
+            pos = 4;
+            */
+            // TVP
+            if (t_ad != null && t_ad.length >= TVP.length) {
+                // ---- Verify TVP from Security header ----
+                long t = System.currentTimeMillis()/100;    // in 0.1s
+                TVP[0] = (byte) ((t >> 24) & 0xFF);
+                TVP[1] = (byte) ((t >> 16) & 0xFF);
+                TVP[2] = (byte) ((t >>  8) & 0xFF);
+                TVP[3] = (byte) ((t >>  0) & 0xFF);
+                t = 0;
+                for (int i = 0; i < TVP.length; i++) {
+                    t =  ((t << 8) + (TVP[i] & 0xff));
+                }
+
+                for (int i = 0; i < TVP.length; i++) {
+                    t_tvp =  ((t_tvp << 8) + (t_ad[i] & 0xff));
+                }
+
+                if (Math.abs(t_tvp-t) > diameter_tvp_time_window*10) {
+                    return "DIAMETER FW: DIAMETER verify signature. Wrong timestamp in TVP (received: " + t_tvp + ", current: " + t + ")";
+                }
+                // ---- End of Verify TVP ----
+            }
+            //
+
+            // remove all signature components from the message
+            _avps.removeAvp(AVP_DESS_SIGNATURE);                  
+
+            // Verify Signature
+            byte[] ad;
+            ad = a_digital_signature.getOctetString();
+
+            if (ad != null) {
+                signatureBytes = Arrays.copyOfRange(ad, TVP.length, ad.length);
+            }
+
+            String dataToSign = message.getApplicationId() + ":" + message.getCommandCode() + ":" + message.getEndToEndIdentifier() + ":" + t_tvp;
+
+            // jDiameter AVPs are not ordered, so order AVPs by sorting base64 strings
+            List<String> strings = new ArrayList<String>();
+            for (int i = 0; i < avps.size(); i++) {
+                Avp a = avps.getAvpByIndex(i);
+                if (a.getCode() != Avp.ROUTE_RECORD) {
+                    strings.add(a.getCode() + "|" + Base64.getEncoder().encodeToString(a.getRawData()));
+                }
+            }
+            Collections.sort(strings);
+            for (String s : strings) {
+                 dataToSign += ":" + s;
+            }
+
+            PublicKey publicKey = DiameterFirewallConfig.origin_realm_verify_signing_realm.get(orig_realm + ":" + signing_realm);
+            if (publicKey == null) {
+                return "";
+            }
+
+            if (publicKey instanceof RSAPublicKey) {
+                signatureRSA.initVerify(publicKey);
+                signatureRSA.update(dataToSign.getBytes());
+                if (signatureBytes != null && signatureRSA.verify(signatureBytes)) {
+                    return "";
+                }
+            } else if (publicKey instanceof ECPublicKey) {
+                logger.warn("EC Public Key algorithm not implemented");
+                return "";
+            } else {
+                logger.warn("Unknown Public Key algorithm");
+                return "";
+            }
+
+        } catch (InvalidKeyException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (SignatureException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (AvpDataException ex) {
+            java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        //}
         
         return "DIAMETER FW: Wrong DIAMETER signature";
     }
