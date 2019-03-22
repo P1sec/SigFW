@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+    <!-- Any files added here need to be added to Custom.make and
+	 packaging/nsis/custom_diameter_xmls.txt if you want them to be distributed
+    -->
+
+    <!-- create entities like this:
+	<!ENTITY myEntity		SYSTEM "myFile.xml">
+    -->
+
+    <!-- and then add the entity here:
+	&myEntity;
+    -->
+
+<vendor vendor-id="DESS"				code="0"	name="GSMA DESS"/>
+
+<!-- NOTE the Application ID is not assigned by IANA http://www.iana.org/assignments/aaa-parameters/aaa-parameters.xml -->
+<application id="16777251" name="3GPP S6a/S6d" uri="none">
+
+	<command name="DTLS HANDSHAKE"	code="1111" vendor-id="DESS"/>
+
+
+	<avp name="DESS-DIGITAL-SIGNATURE" code="1001" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="DESS" may-encrypt="yes">
+		<type type-name="OctetString"/>
+	</avp>
+
+	<avp name="DESS-SYSTEM-TIME" code="1002" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="DESS" may-encrypt="yes">
+		<type type-name="OctetString"/>
+	</avp>
+
+	<avp name="DESS-SIGNING-REALM" code="1105" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="DESS" may-encrypt="yes">
+		<type type-name="OctetString"/>
+	</avp>
+
+	<avp name="DESS-SIGNATURE" code="1000" vendor-id="DESS">
+		<grouped>
+			<gavp name="DESS-DIGITAL-SIGNATURE"/>
+			<gavp name="DESS-SYSTEM-TIME"/>
+			<gavp name="DESS-SIGNING-REALM"/>
+			<gavp name="DESS-SIGNATURE"/>
+		</grouped>
+	</avp>
+
+	<avp name="DESS-DTLS-DATA" code="1112" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="DESS" may-encrypt="yes">
+		<type type-name="OctetString"/>
+	</avp>
+
+	<avp name="ENCRYPTED-GROUPED-DTLS" code="1115" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="DESS" may-encrypt="yes">
+		<type type-name="OctetString"/>
+	</avp>
+
+</application>

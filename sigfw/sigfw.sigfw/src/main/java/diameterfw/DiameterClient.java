@@ -278,6 +278,11 @@ public class DiameterClient implements EventListener<Request, Answer> {
             // example how to add AVP IMSI
             byte[] b = hexStringToByteArray("31313131313131313131313131313131");
             requestAvps.addAvp(1, b, true, false);
+            
+            // example how to add grouped AVP
+            // Adding EPS Location Information
+            b = hexStringToByteArray("000005d880000040000028af0000064080000034000028af0000064280000013000028afffffffffffffff000000064380000011000028afffffffffff000000");
+            requestAvps.addAvp(1496, b, 10415, true, false);
 
             // code , value , vendor, mandatory,protected,isUnsigned32
             // (Enumerated)

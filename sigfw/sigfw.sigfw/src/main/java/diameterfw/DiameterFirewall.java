@@ -139,6 +139,7 @@ import sigfw.common.Crypto;
 import sigfw.common.Utils;
 import sigfw.common.AvpSetImpl;
 import sigfw.common.AvpImpl;
+import org.mobicents.diameter.dictionary.AvpDictionary;
 
 /**
  * @author Martin Kacer
@@ -256,6 +257,14 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
     private static String dtls_trustFilename =
             System.getProperty("test.src", ".") + "/" + dtls_pathToStores +
                 "/" + dtls_trustStoreFile;
+    
+    // protectedAVPs codes used for DTLS encryption
+    List<Integer> protectedAVPCodes = new ArrayList<Integer>(Arrays.asList(
+            1,  // User-Name AVP
+            1600  // MME-Location-Information
+    ));
+
+            
     
     // SSL engines stored for peers used by DTLS
     // this expiring, used to trigger new handshakes after they expire
@@ -1474,7 +1483,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                                 answer.getAvps().addAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY_TYPE, publicKeyType.getBytes());
 
                                 // Public key
-                                answer.getAvps().addAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY,myKeyPair.getPublic().getEncoded());
+                                answer.getAvps().addAvp(AVP_AUTO_ENCRYPTION_PUBLIC_KEY, myKeyPair.getPublic().getEncoded());
 
                                 logger.info("============ Encryption Autodiscovery Sending Result ============ ");
 
@@ -1855,7 +1864,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
 
                             avp = msg.getAvps().getAvp(Avp.ORIGIN_REALM);
                             if (avp != null) {
-                                message.getAvps().addAvp(avp);
+                                message.getAvps().addAvp(avp.getCode(), avp.getRawData(), avp.getVendorId(), avp.isMandatory(), avp.isEncrypted());
                             }
 
                             // --------- Add also Diameter signature ------------
@@ -2052,7 +2061,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
     }
     
     
-    /*
+    /**
      * Get DTSL context
      */
     SSLContext dtls_getDTLSContext() throws Exception {
@@ -2094,7 +2103,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
 
         return sslCtx;
     }
-    /*
+    /**
      * Create engine for DTLS operations
      */
     SSLEngine dtls_createSSLEngine(boolean isClient) throws Exception {
@@ -2110,7 +2119,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
         return engine;
     }
     
-    /*
+    /**
      * DTLS retransmission if timeout
      */
     boolean dtls_onReceiveTimeout(SSLEngine engine, /*SocketAddress socketAddr,*/ String peer_realm, 
@@ -2125,7 +2134,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
         }
     }
     
-    /*
+    /**
      * DTLS handshake
      */
     void dtls_handshake(SSLEngine engine, 
@@ -2332,7 +2341,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
         }
     }
     
-    /*
+    /**
      * DTLS produce handshake packets
      */
     boolean dtls_produceHandshakePackets(SSLEngine engine, /*SocketAddress socketAddr,*/ String peer_realm,
@@ -2425,14 +2434,14 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
         return false;
     }
 
-    /*
+    /**
      * DTLS createHandshakePacket
      */
     DatagramOverDiameterPacket createHandshakePacket(byte[] ba, /*SocketAddress socketAddr*/ String peer_realm) {
         return new DatagramOverDiameterPacket(peer_realm, new DatagramPacket(ba, ba.length));
     }
     
-    /*
+    /**
      * DTLS run delegated tasks
      */
     void dtls_runDelegatedTasks(SSLEngine engine) throws Exception {
@@ -2497,7 +2506,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
     }
     
     
-    /*
+    /**
      * DTLS encrypt byte buffer
      */
     boolean diameterDTLSEncryptBuffer(SSLEngine engine, ByteBuffer source, ByteBuffer appNet) throws Exception {
@@ -2532,7 +2541,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
         return true;
     }
     
-    /*
+    /**
      * DTLS decrypt byte buffer
      */
     boolean diameterDTLSDecryptBuffer(SSLEngine engine, ByteBuffer source, ByteBuffer recBuffer) throws Exception {
@@ -2565,7 +2574,13 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
         return true;
     }
     
-    public boolean diameterDTLSEncrypt(Message message, SSLEngine engine) {
+    /**
+     * DTLS encrypt all AVPs
+     * @param message
+     * @param engine
+     * @return 
+     */
+    public boolean _diameterDTLSEncrypt(Message message, SSLEngine engine) {
         
         logger.debug("== diameterDTLSEncrypt ==");
         
@@ -2595,7 +2610,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                     a.getCode() != Crypto.AVP_ENCRYPTED_GROUPED &&
                     a.getCode() != AVP_ENCRYPTED_GROUPED_DTLS
                 ) {
-                    erAvp.addAvp(a);
+                    erAvp.addAvp(a.getCode(), a.getRawData(), a.getVendorId(), a.isMandatory(), a.isEncrypted());
                     avps.removeAvpByIndex(i);
                     i--;
             }
@@ -2641,7 +2656,13 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
         return true;
     }
 
-    public boolean diameterDTLSDecrypt(Message message, SSLEngine engine) {
+    /**
+     * DTLS decrypt all AVPs
+     * @param message
+     * @param engine
+     * @return 
+     */
+    public boolean _diameterDTLSDecrypt(Message message, SSLEngine engine) {
         
         logger.debug("== diameterDTLSDecrypt ==");
         
@@ -2733,7 +2754,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                     for (int j = 0; j < _avps.size(); j++) {
                         AvpImpl _a = (AvpImpl)_avps.getAvpByIndex(j);
                         logger.debug("addAVP = " + _a.getCode());
-                        avps.insertAvp(i, _a.getCode(), _a.getRawData(), _a.vendorID, _a.isMandatory, false);
+                        avps.insertAvp(i, _a.getCode(), _a.getRawData(), _a.vendorID, _a.isMandatory, _a.isEncrypted());
                     }
                     avps.removeAvpByIndex(i + _avps.size());
                     
@@ -2751,4 +2772,315 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
         
         return true;
     }
+    
+    /**
+     * DTLS encrypt for protected AVPs only (GSMA DESS)
+     * @param message
+     * @param engine
+     * @return 
+     */
+    public boolean diameterDTLSEncrypt(Message message, SSLEngine engine) {
+        
+        logger.debug("== diameterDTLSEncrypt ==");
+        
+        /*if (engine.getHandshakeStatus() != SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING) {
+            logger.warn("== diameterDTLSEncrypt DTLS handshake not finnished ==");
+            // consider it as ok, if the handshake is still ongoing
+            return true;
+        }*/
+        
+        AvpSet _avps = message.getAvps();
+        
+        // cloned AVPs
+        AvpSet avps = ((Message) ((IMessage) message).clone()).getAvps();
+        
+        AvpSet erAvp = avps.addGroupedAvp(AVP_ENCRYPTED_GROUPED_DTLS);
+        
+        // Fill the AVP_ENCRYPTED_GROUPED_DTLS with cloned AVPs
+        for (int i = 0; i <_avps.size(); i++) {
+            Avp a = _avps.getAvpByIndex(i);
+            
+            //logger.debug("AVP[" + i + "] Code = " + a.getCode());
+            
+            if (
+                    a.getCode() != Avp.ORIGIN_HOST &&
+                    a.getCode() != Avp.ORIGIN_REALM &&
+                    a.getCode() != Avp.DESTINATION_HOST &&
+                    a.getCode() != Avp.DESTINATION_REALM &&
+                    a.getCode() != Avp.SESSION_ID &&
+                    a.getCode() != Avp.ROUTE_RECORD &&
+                    a.getCode() != Crypto.AVP_ENCRYPTED &&
+                    a.getCode() != Crypto.AVP_ENCRYPTED_GROUPED &&
+                    a.getCode() != AVP_ENCRYPTED_GROUPED_DTLS
+                ) {
+                    erAvp.addAvp(a.getCode(), a.getRawData(), a.getVendorId(), a.isMandatory(), a.isEncrypted());
+                    //avps.removeAvpByIndex(i);
+                    //i--;
+            }
+        }
+        
+        try {
+            // Remove the non protected AVPs (which are not under grouped protected) from new AVP_ENCRYPTED_GROUPED_DTLS which contains cloned AVPs
+            removeTheAVPs(erAvp, protectedAVPCodes, false);
+
+            // Remove the protected AVPs from the original message
+            removeTheAVPs(_avps, protectedAVPCodes, true);
+
+            //byte[] d = a.getRawData();
+                      
+            byte [] d = Utils.encodeAvpSet(erAvp);
+
+            logger.debug("avps.size = " + erAvp.size());
+            logger.debug("plainText = " + d.toString());
+            logger.debug("plainText.size = " + d.length);
+
+            /*// SPI(version) and TVP(timestamp)
+            byte[] SPI = {0x00, 0x00, 0x00, 0x00};  // TODO
+            byte[] TVP = {0x00, 0x00, 0x00, 0x00};
+
+            long t = System.currentTimeMillis()/100;    // in 0.1s
+            TVP[0] = (byte) ((t >> 24) & 0xFF);
+            TVP[1] = (byte) ((t >> 16) & 0xFF);
+            TVP[2] = (byte) ((t >>  8) & 0xFF);
+            TVP[3] = (byte) ((t >>  0) & 0xFF);*/
+
+            
+            ByteBuffer cipherTextBuffer = ByteBuffer.allocate(DTLS_BUFFER_SIZE);
+            boolean res = diameterDTLSEncryptBuffer(engine, ByteBuffer.wrap(d, 0, d.length), cipherTextBuffer);
+            if (res == false) {
+                logger.warn("diameterDTLSEncrypt: Failed encryption of DTLS data");
+                return false;
+            }
+            
+            byte[] cipherText = new byte[cipherTextBuffer.remaining()];
+            cipherTextBuffer.get(cipherText);
+            
+            //logger.debug("Add AVP Grouped Encrypted. Current index");
+            //_avps.removeAvp(AVP_ENCRYPTED_GROUPED_DTLS);
+            _avps.addAvp(AVP_ENCRYPTED_GROUPED_DTLS, cipherText, false, false);
+
+        } catch (Exception ex) {
+            java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+        return true;
+    }
+
+    
+    /**
+     * DTLS decrypt for protected AVPs only (GSMA DESS)
+     * @param message
+     * @param engine
+     * @return 
+     */
+    public boolean diameterDTLSDecrypt(Message message, SSLEngine engine) {
+        
+        logger.debug("== diameterDTLSDecrypt ==");
+        
+        /*if (engine.getHandshakeStatus() != SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING) {
+            logger.warn("== diameterDTLSDecrypt DTLS handshake not finnished ==");
+            // consider it as ok, if the handshake is still ongoing
+            return true;
+        }*/
+        
+        AvpSet avps = message.getAvps();
+        
+        int avps_size = avps.size();
+        
+        
+        for (int i = 0; i < avps_size; i++) {
+            Avp a = avps.getAvpByIndex(i);
+            
+            //logger.debug("AVP[" + i + "] Code = " + a.getCode());
+            
+            if (a.getCode() == AVP_ENCRYPTED_GROUPED_DTLS) {
+                AvpSetImpl _avps;
+                try {
+                    logger.debug("Diameter Decryption of Grouped Encrypted DTLS AVP");
+                    byte[] b = a.getOctetString();
+                    byte[] d = b;
+                    /*// SPI(version) and TVP(timestamp)decrypt
+                    byte[] SPI = {0x00, 0x00, 0x00, 0x00};
+                    byte[] TVP = {0x00, 0x00, 0x00, 0x00};
+                    byte[] d = null;
+                    if (b.length >= SPI.length) {
+                        SPI = Arrays.copyOfRange(b, 0, SPI.length);
+                        d = Arrays.copyOfRange(b, SPI.length, b.length);
+                    } else {
+                        d = b;
+                    }   // TODO verify SPI*/
+                    
+                    ByteBuffer decryptedTextBuffer = ByteBuffer.allocate(DTLS_BUFFER_SIZE);
+                    boolean res = diameterDTLSDecryptBuffer(engine, ByteBuffer.wrap(d, 0, d.length), decryptedTextBuffer);
+                    if (res == false) {
+                        logger.warn("diameterDTLSDecrypt: Failed decryption of DTLS data");
+                        return false;
+                    }
+                    
+                    
+                    if (decryptedTextBuffer.remaining() != 0) {
+                        logger.debug("diameterDTLSDecrypt: Successful decryption of DTLS data");
+                    }
+                        
+                    byte[] decryptedText = new byte[decryptedTextBuffer.remaining()];
+                    decryptedTextBuffer.get(decryptedText);
+                    
+                    /*d = decryptedText;
+                    
+                    if (d.length < 4) {
+                        logger.error("diameterDTLSDecrypt: Unable to decrypt data");
+                        return false;
+                    }
+                    
+                    // ---- Verify TVP from Security header ----
+                    long t = System.currentTimeMillis()/100;    // in 0.1s
+                    TVP[0] = (byte) ((t >> 24) & 0xFF);
+                    TVP[1] = (byte) ((t >> 16) & 0xFF);
+                    TVP[2] = (byte) ((t >>  8) & 0xFF);
+                    TVP[3] = (byte) ((t >>  0) & 0xFF);
+                    t = 0;
+                    for (int j = 0; j < TVP.length; j++) {
+                        t =  ((t << 8) + (TVP[j] & 0xff));
+                    }
+
+                    TVP[0] = d[0]; TVP[1] = d[1]; TVP[2] = d[2]; TVP[3] = d[3];
+                    long t_tvp = 0;
+                    for (int j = 0; j < TVP.length; j++) {
+                        t_tvp =  ((t_tvp << 8) + (TVP[j] & 0xff));
+                    }
+                    if (Math.abs(t_tvp-t) > Crypto.diameter_tvp_time_window*10) {
+                        return "DIAMETER FW: Blocked in decryption, Wrong timestamp in TVP (received: " + t_tvp + ", current: " + t + ")";
+                    }
+                    d = Arrays.copyOfRange(d, TVP.length, d.length);*/
+                    // ---- End of Verify TVP ----
+            
+                    //logger.debug("Add AVP Decrypted. Current index = " + i);
+                    //AvpImpl avp = new AvpImpl(code, (short) flags, (int) vendor, rawData);
+                    //avps.insertAvp(i, ByteBuffer.wrap(cc).order(ByteOrder.BIG_ENDIAN).getInt(), d, false, false);
+                    //logger.debug("decryptedText = " + decryptedText.toString());
+                    //logger.debug("decryptedText.size = " + decryptedText.length);
+                    _avps = (AvpSetImpl)Utils.decodeAvpSet(decryptedText, 0);                   
+                    
+                    //logger.debug("SIZE = " + _avps.size());
+                    
+                    /*for (int j = 0; j < _avps.size(); j++) {
+                        AvpImpl _a = (AvpImpl)_avps.getAvpByIndex(j);
+                        logger.debug("addAVP = " + _a.getCode());
+                        avps.insertAvp(i, _a.getCode(), _a.getRawData(), _a.vendorID, _a.isMandatory, _a.isEncrypted);
+                    }
+                    avps.removeAvpByIndex(i + _avps.size());*/
+                    
+                    mergeAVPLists(avps, _avps);
+                    avps.removeAvp(AVP_ENCRYPTED_GROUPED_DTLS);                   
+                    
+                } catch (IOException ex) {
+                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+                } catch (AvpDataException ex) {
+                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+                } catch (Exception ex) {
+                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+                }
+  
+            }
+            
+        }
+        
+        return true;
+    }
+    /**
+     * Remove the protected or non-protected AVPs by iterating all APVs and recursively descending into grouped AVPs
+     * @param avps AVP set
+     * @param protectedAVPCodes List of protected AVP codes
+     * @param removeProtected If set to true, the protected AVPs are removed. If set to false. the non-protected AVPs are removed
+     */
+    void removeTheAVPs(AvpSet avps,  List<Integer> protectedAVPCodes, boolean removeProtected) throws AvpDataException {
+        if (avps == null || protectedAVPCodes == null ) {
+            return;
+        }
+        
+        for (int i = 0; i < avps.size(); i++) {
+            Avp a = avps.getAvpByIndex(i);
+            
+            // For grouped AVPs do recursion
+            AvpRepresentation avpRep = AvpDictionary.INSTANCE.getAvp(a.getCode(), a.getVendorId());
+            if (avpRep != null && avpRep.getType().equals("Grouped")) {
+                // removeProtected == true: Remove AVP code if it is in protectedAVPCodes
+                // hard delete is done, removing the protected grouped AVPs in every case
+                if (removeProtected && protectedAVPCodes.contains(a.getCode())) {
+                    avps.removeAvpByIndex(i);
+                    i--;
+                } else if (removeProtected) {
+                    // if the AVP should not be removed, recurs into
+                    removeTheAVPs(a.getGrouped(), protectedAVPCodes, removeProtected);
+                }
+                // removeProtected == false: Remove AVP code if it is not in protectedAVPCodes
+                // soft delete is done, preserving non protected grouped AVPs if there are sub AVPs
+                if (!removeProtected && !protectedAVPCodes.contains(a.getCode())){
+                    
+                    // while removing non protected AVP also remove sub AVP entries which are also non protected
+                    removeTheAVPs(a.getGrouped(), protectedAVPCodes, removeProtected);
+
+                    // Remove empty grouped AVPs only
+                    if (a.getGrouped().size() == 0) {
+                        avps.removeAvpByIndex(i);
+                        i--;
+                    }
+                } else if (!removeProtected) {
+                    // if the AVP should not be removed (it is protected), don't recurs into
+                    // do nothing
+                }
+            }
+            // Non grouped AVPs
+            else {
+                // removeProtected == true: Remove AVP code if it is in protectedAVPCodes
+                if (removeProtected && protectedAVPCodes.contains(a.getCode())) {
+                    avps.removeAvpByIndex(i);
+                    i--;
+                } 
+                // removeProtected == true: Remove AVP code if it is not in protectedAVPCodes
+                else if (!removeProtected && !protectedAVPCodes.contains(a.getCode())){
+                    avps.removeAvpByIndex(i);
+                    i--;
+                }
+            }
+        }
+    }
+    
+    /**
+     * Merge 2 AVP Sets by considering also grouped AVPs. Remove the dest AVPs if the same AVP code exist in source AVP set on same hierarchy level.
+     * @param avps Dest AVP set
+     * @param _avps Source AVP set which will be added into Dest AVP set
+     */
+    void mergeAVPLists(AvpSet avps, AvpSet _avps) throws AvpDataException {
+        if (avps == null || _avps == null ) {
+            return;
+        }
+        
+        for (int i = 0; i < _avps.size(); i++) {
+            Avp _a = _avps.getAvpByIndex(i);
+            
+            // Simple Add AVP if such AVP does not exist in dest AVP set
+            Avp a = avps.getAvp(_a.getCode());
+            if (a == null) {
+                avps.addAvp(_a.getCode(), _a.getRawData(), _a.getVendorId(), _a.isMandatory(), _a.isEncrypted());
+            }
+            // If the AVP exists in dest AVP set
+            else {
+                // For grouped AVPs do recursion
+                AvpRepresentation avpRep = AvpDictionary.INSTANCE.getAvp(_a.getCode(), _a.getVendorId());
+                if (avpRep != null && avpRep.getType().equals("Grouped")) {
+                    mergeAVPLists(a.getGrouped(), _a.getGrouped());
+                }
+                // For basic AVPs, do merge with replace
+                else {
+                    // Remove the dest AVPs if the same AVP code exist in source AVP set on same hierarchy level
+                    avps.removeAvp(a.getCode());
+                    
+                    // Add AVP
+                    avps.addAvp(_a.getCode(), _a.getRawData(), _a.getVendorId(), _a.isMandatory(), _a.isEncrypted());
+                }
+            }
+        }
+    }
+    
 }
