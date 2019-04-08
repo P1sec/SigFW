@@ -16,21 +16,21 @@
         
     <properties>
         <checkstyle.skip>true</checkstyle.skip>
-        <log4j.version>1.2.14</log4j.version>
+        <log4j.version>1.2.17</log4j.version>
             
-        <restcomm.diameter.jdiameter.version>1.7.0.201</restcomm.diameter.jdiameter.version>
-        <restcomm.diameter.mux.version>1.7.0.201</restcomm.diameter.mux.version>
+        <restcomm.diameter.jdiameter.version>1.7.1-123</restcomm.diameter.jdiameter.version>
+        <restcomm.diameter.mux.version>1.7.1-123</restcomm.diameter.mux.version>
         <restcomm.jss7.version>8.0.112</restcomm.jss7.version>
         <get.opt.version>1.0.9</get.opt.version>
-        <picocontainer.version>1.2</picocontainer.version>
-        <slf4j.version>1.7.21</slf4j.version>
+        <picocontainer.version>20051006.102514</picocontainer.version>
+        <slf4j.version>1.8.0-beta4</slf4j.version>
     </properties>
 
     <dependencies>
         <dependency>
             <groupId>org.mobicents.protocols.asn</groupId>
             <artifactId>asn</artifactId>
-            <version>2.2.0-22</version>
+            <version>2.2.0-143</version>
         </dependency>
         <dependency>
             <groupId>org.mobicents.protocols.ss7.sccp</groupId>
@@ -105,12 +105,12 @@
         <dependency>
             <groupId>org.mobicents.protocols.sctp</groupId>
             <artifactId>sctp-api</artifactId>
-            <version>2.0.0-166</version>
+            <version>2.0.18</version>
         </dependency>
         <dependency>
             <groupId>org.mobicents.protocols.sctp</groupId>
             <artifactId>sctp-impl</artifactId>
-            <version>2.0.0-166</version>
+            <version>2.0.18</version>
         </dependency>
         <dependency>
             <groupId>org.mobicents.protocols.ss7.m3ua</groupId>
@@ -183,7 +183,7 @@
         <dependency>
             <groupId>com.jayway.jsonpath</groupId>
             <artifactId>json-path</artifactId>
-            <version>2.2.0</version>
+            <version>2.4.0</version>
             <exclusions>
                 <exclusion>
                     <groupId>org.slf4j</groupId>
@@ -194,32 +194,32 @@
         <dependency>
             <groupId>org.eclipse.jetty</groupId>
             <artifactId>jetty-server</artifactId>
-            <version>9.4.0.v20161208</version>
+            <version>9.4.15.v20190215</version>
         </dependency>
         <dependency>
             <groupId>org.eclipse.jetty</groupId>
             <artifactId>jetty-servlet</artifactId>
-            <version>9.4.0.v20161208</version>
+            <version>9.4.15.v20190215</version>
         </dependency>
         <dependency>
             <groupId>org.glassfish.jersey.core</groupId>
             <artifactId>jersey-server</artifactId>
-            <version>2.25</version>
+            <version>2.28</version>
         </dependency>
         <dependency>
             <groupId>org.glassfish.jersey.core</groupId>
             <artifactId>jersey-client</artifactId>
-            <version>2.25</version>
+            <version>2.28</version>
         </dependency>
         <dependency>
             <groupId>org.glassfish.jersey.containers</groupId>
             <artifactId>jersey-container-servlet-core</artifactId>
-            <version>2.25</version>
+            <version>2.28</version>
         </dependency>
         <dependency>
             <groupId>org.glassfish.jersey.containers</groupId>
             <artifactId>jersey-container-jetty-http</artifactId>
-            <version>2.25</version>
+            <version>2.28</version>
             <exclusions>
                 <exclusion>
                     <groupId>org.eclipse.jetty</groupId>
@@ -230,12 +230,12 @@
         <dependency>
             <groupId>org.glassfish.jersey.media</groupId>
             <artifactId>jersey-media-moxy</artifactId>
-            <version>2.25</version>
+            <version>2.28</version>
         </dependency>
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
-            <version>2.8.0</version>
+            <version>2.8.5</version>
         </dependency>
         <dependency>
             <groupId>org.luaj</groupId>
@@ -245,12 +245,12 @@
         <dependency>
             <groupId>net.jodah</groupId>
             <artifactId>expiringmap</artifactId>
-            <version>0.3.1</version>
+            <version>0.5.9</version>
         </dependency>
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
-            <version>4.12</version>
+            <version>4.13-beta-2</version>
             <scope>test</scope>
         </dependency>
         

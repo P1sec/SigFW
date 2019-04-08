@@ -3105,13 +3105,4 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
         return s;
     }
 
-    @Override
-    public void onServerModified(org.mobicents.protocols.api.Server server) {
-        logger.debug("[[[[[[[[[[    onServerModified      ]]]]]]]]]]");
-    }
-
-    @Override
-    public void onAssociationModified(Association asctn) {
-        logger.debug("[[[[[[[[[[    onAssociationModified      ]]]]]]]]]]");
-    }
 }

@@ -2048,18 +2048,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
         }
         
         return s;
-    }
-
-    @Override
-    public void onServerModified(Server server) {
-        logger.debug("[[[[[[[[[[    onServerModified      ]]]]]]]]]]");
-    }
-
-    @Override
-    public void onAssociationModified(Association asctn) {
-        logger.debug("[[[[[[[[[[    onAssociationModified      ]]]]]]]]]]");
-    }
-    
+    }    
     
     /**
      * Get DTSL context

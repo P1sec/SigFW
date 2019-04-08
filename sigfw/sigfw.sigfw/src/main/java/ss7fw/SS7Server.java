@@ -939,13 +939,4 @@ public class SS7Server extends AbstractSctpBase implements MAPDialogListener, MA
         }
     }
 
-    @Override
-    public void onServerModified(Server server) {
-        logger.debug("[[[[[[[[[[    onServerModified      ]]]]]]]]]]");
-    }
-
-    @Override
-    public void onAssociationModified(Association asctn) {
-       logger.debug("[[[[[[[[[[    onAssociationModified      ]]]]]]]]]]");
-    }
 }

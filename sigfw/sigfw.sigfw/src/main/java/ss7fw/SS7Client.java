@@ -644,13 +644,4 @@ public class SS7Client extends AbstractSctpBase implements ManagementEventListen
         }
     }
 
-    @Override
-    public void onServerModified(Server server) {
-        logger.debug("[[[[[[[[[[    onServerModified      ]]]]]]]]]]");
-    }
-
-    @Override
-    public void onAssociationModified(Association asctn) {
-        logger.debug("[[[[[[[[[[    onAssociationModified      ]]]]]]]]]]");
-    }
 }

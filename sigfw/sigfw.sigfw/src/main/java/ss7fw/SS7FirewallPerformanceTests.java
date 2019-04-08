@@ -388,16 +388,6 @@ public class SS7FirewallPerformanceTests implements ManagementEventListener, Ass
     }
 
     @Override
-    public void onServerModified(Server server) {
-        log.debug("[[[[[[[[[[    onServerModified      ]]]]]]]]]]");
-    }
-
-    @Override
-    public void onAssociationModified(Association asctn) {
-        log.debug("[[[[[[[[[[    onAssociationModified      ]]]]]]]]]]");
-    }
-
-    @Override
     public void onCommunicationUp(Association asctn, int maxInboundStreams, int maxOutboundStreams) {
         log.debug("[[[[[[[[[[    onCommunicationUp      ]]]]]]]]]]");
         log.debug("maxInboundStreams = " + maxInboundStreams);
