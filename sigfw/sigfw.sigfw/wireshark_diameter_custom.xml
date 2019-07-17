@@ -15,9 +15,10 @@
 <vendor vendor-id="DESS"				code="0"	name="GSMA DESS"/>
 
 <!-- NOTE the Application ID is not assigned by IANA http://www.iana.org/assignments/aaa-parameters/aaa-parameters.xml -->
-<application id="16777251" name="3GPP S6a/S6d" uri="none">
+<application id="11111111" name="GSMA DESS interface" uri="none">
 
-	<command name="DTLS HANDSHAKE"	code="1111" vendor-id="DESS"/>
+	<command name="DTLS HANDSHAKE CLIENT" code="1111" vendor-id="DESS"/>
+	<command name="DTLS HANDSHAKE SERVER" code="1112" vendor-id="DESS"/>
 
 
 	<avp name="DESS-DIGITAL-SIGNATURE" code="1001" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="DESS" may-encrypt="yes">
@@ -29,7 +30,7 @@
 	</avp>
 
 	<avp name="DESS-SIGNING-REALM" code="1105" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="DESS" may-encrypt="yes">
-		<type type-name="OctetString"/>
+		<type type-name="DiameterIdentity"/>
 	</avp>
 
 	<avp name="DESS-SIGNATURE" code="1000" vendor-id="DESS">
@@ -37,7 +38,6 @@
 			<gavp name="DESS-DIGITAL-SIGNATURE"/>
 			<gavp name="DESS-SYSTEM-TIME"/>
 			<gavp name="DESS-SIGNING-REALM"/>
-			<gavp name="DESS-SIGNATURE"/>
 		</grouped>
 	</avp>
 

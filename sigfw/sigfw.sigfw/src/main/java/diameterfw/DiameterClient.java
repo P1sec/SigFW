@@ -276,7 +276,7 @@ public class DiameterClient implements EventListener<Request, Answer> {
             requestAvps.removeAvp(293);
 
             // example how to add AVP IMSI
-            byte[] b = hexStringToByteArray("31313131313131313131313131313131");
+            byte[] b = hexStringToByteArray("313131303131313131313131313131");
             requestAvps.addAvp(1, b, true, false);
             
             // example how to add grouped AVP
@@ -286,10 +286,10 @@ public class DiameterClient implements EventListener<Request, Answer> {
 
             // code , value , vendor, mandatory,protected,isUnsigned32
             // (Enumerated)
-            Avp exchangeType = requestAvps.addAvp(exchangeTypeCode, (long) enumType, vendorID, true, false, true);
+            //Avp exchangeType = requestAvps.addAvp(exchangeTypeCode, (long) enumType, vendorID, true, false, true);
             
             // code , value , vendor, mandatory,protected, isOctetString
-            Avp exchengeData = requestAvps.addAvp(exchangeDataCode, TO_SEND[(toSendIndex++)%(TO_SEND.length)], vendorID, true, false, false);
+            //Avp exchengeData = requestAvps.addAvp(exchangeDataCode, TO_SEND[(toSendIndex++)%(TO_SEND.length)], vendorID, true, false, false);
                                                                                                                                                                                                                                             
             // creation
             // send

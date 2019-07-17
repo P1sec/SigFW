@@ -334,7 +334,9 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
     static final public int AVP_DESS_SIGNING_REALM = 1105;
     
     // Command Code for DatagramOverDiameterPacket 
-    static final private int CC_DTLS_HANDSHAKE = 1111;     // DTLS handshake messages
+    static final private int AI_DESS_INTERFACE = 11111111;
+    static final private int CC_DTLS_HANDSHAKE_CLIENT = 1111;     // DTLS handshake messages
+    static final private int CC_DTLS_HANDSHAKE_SERVER = 1112;     // DTLS handshake messages
     //static final private int CC_DTLS_HANDSHAKE_REQUESTED = 1112;    // handshake requested by server
     static final private int AVP_DTLS_DATA = 1112;  
     static final private int AVP_ENCRYPTED_GROUPED_DTLS = 1115;
@@ -1006,6 +1008,12 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
             firewallPolicy = "DROP_WITH_DIAMETER_ERROR";
             
             Answer answer = ((IMessage)(message)).createAnswer(ResultCode.UNABLE_TO_DELIVER);
+            if (message.getAvps().getAvp(Avp.DESTINATION_HOST) != null) {
+                answer.getAvps().addAvp(Avp.ORIGIN_HOST, message.getAvps().getAvp(Avp.DESTINATION_HOST).getRawData());
+            }
+            if (message.getAvps().getAvp(Avp.DESTINATION_REALM) != null) {
+                answer.getAvps().addAvp(Avp.ORIGIN_REALM, message.getAvps().getAvp(Avp.DESTINATION_REALM).getRawData());
+            }
             sendDiameterMessage(origin_asctn, payloadProtocolId, streamNumber, answer, false, lua_hm);
         } else if (DiameterFirewallConfig.firewallPolicy == DiameterFirewallConfig.FirewallPolicy.DNAT_TO_HONEYPOT && dnat_sessions != null
                 && message.getAvps() != null
@@ -1167,7 +1175,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                     // --------------- Diameter signature ---------------
                     // Verify both Requests and Answers containing Orig-Realm
                     if (!orig_realm.equals("") /*&& msg.isRequest()*/
-                            && cc != CC_DTLS_HANDSHAKE) {
+                            && cc != CC_DTLS_HANDSHAKE_CLIENT && cc != CC_DTLS_HANDSHAKE_SERVER) {
                         // ------------- Diameter verify --------------
                         if (DiameterFirewallConfig.origin_realm_verify.containsKey(orig_realm)) {
                             /*if (msg.getAvps().getAvp(AVP_DESS_SIGNING_REALM) == null) {
@@ -1207,7 +1215,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                     String needDTLSHandshakeReason = "";
                         
                     if (!dest_realm.equals("") && msg.isRequest() 
-                            && cc != CC_DTLS_HANDSHAKE) { 
+                            && cc != CC_DTLS_HANDSHAKE_CLIENT && cc != CC_DTLS_HANDSHAKE_SERVER) { 
                         
                         // DTLS decryption
                         if (dtls_engine_permanent_server.containsKey(orig_realm)) {
@@ -1465,6 +1473,13 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                             KeyPair myKeyPair = DiameterFirewallConfig.destination_realm_decryption.get(dest_realm);
                             if (myKeyPair != null) {
                                 Answer answer = ((IMessage)(msg)).createAnswer(ResultCode.SUCCESS);
+                                
+                                if (msg.getAvps().getAvp(Avp.DESTINATION_HOST) != null) {
+                                    answer.getAvps().addAvp(Avp.ORIGIN_HOST, msg.getAvps().getAvp(Avp.DESTINATION_HOST).getRawData());
+                                }
+                                if (msg.getAvps().getAvp(Avp.DESTINATION_REALM) != null) {
+                                    answer.getAvps().addAvp(Avp.ORIGIN_REALM, msg.getAvps().getAvp(Avp.DESTINATION_REALM).getRawData());
+                                }
 
                                 // Capabilities
                                 // TODO
@@ -1557,120 +1572,139 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                     
                     // DTLS processing inbound handshake messages
                     // Only targeting HPLMN
-                    if (cc == CC_DTLS_HANDSHAKE
+                    if ((cc == CC_DTLS_HANDSHAKE_CLIENT || cc == CC_DTLS_HANDSHAKE_SERVER)
                         && DiameterFirewallConfig.dtls_encryption.equals("true")
                         //&& msg.isRequest()
                         && DiameterFirewallConfig.hplmn_realms.containsKey(dest_realm)
                         && !DiameterFirewallConfig.hplmn_realms.containsKey(orig_realm)
                                 ) {
                         
-                                if (msg.getAvps() != null) {
-                                    if (msg.getAvps().getAvp(AVP_DTLS_DATA) != null) {
-                                        
-                                        logger.info("Received DTLS handshake message from realm: " + orig_realm);
-                                        
-                                        // Request (client -> server)
-                                        if (msg.isRequest()) {
-                                        
-                                            // Create socket if does not exists
-                                            if (!datagramOverDiameterSocket_inbound_server.containsKey(orig_realm)) {
-                                                datagramOverDiameterSocket_inbound_server.put(orig_realm, new ConcurrentLinkedQueue<DatagramOverDiameterPacket>());
-                                            }
+                                // process only requests
+                                if (msg.isRequest()) {
+                                    if (msg.getAvps() != null) {
+                                        if (msg.getAvps().getAvp(AVP_DTLS_DATA) != null) {
 
-                                            datagramOverDiameterSocket_inbound_server.get(orig_realm).add(new DatagramOverDiameterPacket(orig_realm, new DatagramPacket(msg.getAvps().getAvp(AVP_DTLS_DATA).getOctetString(), msg.getAvps().getAvp(AVP_DTLS_DATA).getOctetString().length)));
+                                            logger.info("Received DTLS handshake message from realm: " + orig_realm);
 
+                                            // Request (client -> server)
+                                            if (cc == CC_DTLS_HANDSHAKE_CLIENT) {
+                                            //if (msg.isRequest()) {
 
-                                            boolean needHandshake = false;
-                                            String needHandshakeReason = "";
-                                            
-                                            try {
-
-                                                // new handshaking peer
-                                                if(!dtls_engine_handshaking_server.containsKey(orig_realm)) {
-                                                    needHandshake = true;
-
-                                                    needHandshakeReason = "needDTLSHandshake indicated, because new handshaking client detected. Peer: " + orig_realm;
+                                                // Create socket if does not exists
+                                                if (!datagramOverDiameterSocket_inbound_server.containsKey(orig_realm)) {
+                                                    datagramOverDiameterSocket_inbound_server.put(orig_realm, new ConcurrentLinkedQueue<DatagramOverDiameterPacket>());
                                                 }
-                                                // no thread exist
-                                                /*else if (!dtls_handshake_treads.containsKey(orig_realm)){
-                                                    needHandshake = true;
 
-                                                    needHandshakeReason = "Initiate DTLS, because handshaking thread does not exist anymore. Peer: " + orig_realm;
-                                                }*/
-                                                /*// thread not active
-                                                else if (!dtls_handshake_treads.get(orig_realm).isAlive()){
-                                                    needHandshake = true;
+                                                datagramOverDiameterSocket_inbound_server.get(orig_realm).add(new DatagramOverDiameterPacket(orig_realm, new DatagramPacket(msg.getAvps().getAvp(AVP_DTLS_DATA).getOctetString(), msg.getAvps().getAvp(AVP_DTLS_DATA).getOctetString().length)));
 
-                                                    needHandshakeReason = "Initiate DTLS, because handshaking thread is not alive. Peer: " + orig_realm;
-                                                }*/
-                                                /*// NOT_HANDSHAKING status
-                                                else if (dtls_engine.get(orig_realm).getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING){
-                                                    needHandshake = true;
 
-                                                    needHandshakeReason = "Initiate DTLS, because in NOT_HANDSHAKING status";
-                                                }*/
+                                                boolean needHandshake = false;
+                                                String needHandshakeReason = "";
 
-                                                // dispatch handshake in new thread
-                                                if(needHandshake) {
-                                                    // Only if no server handshaking is ongoing
-                                                    
-                                                    if (/*(!dtls_handshake_treads.containsKey(orig_realm) || !dtls_handshake_treads.get(orig_realm).isAlive())
-                                                            && */!dtls_engine_handshaking_server.containsKey(orig_realm)) {
+                                                try {
 
-                                                        logger.info("Initiate DTLS handshake server side for peer: " + orig_realm);
-                                                        logger.info("Initiate DTLS handshake reason: " + needHandshakeReason);
+                                                    // new handshaking peer
+                                                    if(!dtls_engine_handshaking_server.containsKey(orig_realm)) {
+                                                        needHandshake = true;
 
-                                                        final String o_realm = String.valueOf(orig_realm);
+                                                        needHandshakeReason = "needDTLSHandshake indicated, because new handshaking client detected. Peer: " + orig_realm;
+                                                    }
+                                                    // no thread exist
+                                                    /*else if (!dtls_handshake_treads.containsKey(orig_realm)){
+                                                        needHandshake = true;
 
-                                                        Thread t = new Thread(new Runnable() {
-                                                            @Override
-                                                            public void run() {
-                                                                try {
-                                                                    /*if(!dtls_engine_handshaking_server.containsKey(o_realm)) {
-                                                                        dtls_engine_handshaking_server.putIfAbsent(o_realm, dtls_createSSLEngine(false));
-                                                                    }*/
-                                                                    dtls_engine_handshaking_server.put(o_realm, dtls_createSSLEngine(false));
+                                                        needHandshakeReason = "Initiate DTLS, because handshaking thread does not exist anymore. Peer: " + orig_realm;
+                                                    }*/
+                                                    /*// thread not active
+                                                    else if (!dtls_handshake_treads.get(orig_realm).isAlive()){
+                                                        needHandshake = true;
 
-                                                                    dtls_handshake(dtls_engine_handshaking_server.get(o_realm), datagramOverDiameterSocket_inbound_server.get(o_realm), /*datagramOverDiameterSocket_outbound*/ asctn, o_realm, "server", false);
-                                                                } catch (Exception ex) {
-                                                                    //dtls_engine_handshaking_server.remove(o_realm);
-                                                                    //dtls_handshake_treads.remove(o_realm);
-                                                                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+                                                        needHandshakeReason = "Initiate DTLS, because handshaking thread is not alive. Peer: " + orig_realm;
+                                                    }*/
+                                                    /*// NOT_HANDSHAKING status
+                                                    else if (dtls_engine.get(orig_realm).getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING){
+                                                        needHandshake = true;
+
+                                                        needHandshakeReason = "Initiate DTLS, because in NOT_HANDSHAKING status";
+                                                    }*/
+
+                                                    // dispatch handshake in new thread
+                                                    if(needHandshake) {
+                                                        // Only if no server handshaking is ongoing
+
+                                                        if (/*(!dtls_handshake_treads.containsKey(orig_realm) || !dtls_handshake_treads.get(orig_realm).isAlive())
+                                                                && */!dtls_engine_handshaking_server.containsKey(orig_realm)) {
+
+                                                            logger.info("Initiate DTLS handshake server side for peer: " + orig_realm);
+                                                            logger.info("Initiate DTLS handshake reason: " + needHandshakeReason);
+
+                                                            final String o_realm = String.valueOf(orig_realm);
+
+                                                            Thread t = new Thread(new Runnable() {
+                                                                @Override
+                                                                public void run() {
+                                                                    try {
+                                                                        /*if(!dtls_engine_handshaking_server.containsKey(o_realm)) {
+                                                                            dtls_engine_handshaking_server.putIfAbsent(o_realm, dtls_createSSLEngine(false));
+                                                                        }*/
+                                                                        dtls_engine_handshaking_server.put(o_realm, dtls_createSSLEngine(false));
+
+                                                                        dtls_handshake(dtls_engine_handshaking_server.get(o_realm), datagramOverDiameterSocket_inbound_server.get(o_realm), /*datagramOverDiameterSocket_outbound*/ asctn, o_realm, "server", false);
+                                                                    } catch (Exception ex) {
+                                                                        //dtls_engine_handshaking_server.remove(o_realm);
+                                                                        //dtls_handshake_treads.remove(o_realm);
+                                                                        java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+                                                                    }
                                                                 }
-                                                            }
-                                                        });
-                                                        //dtls_handshake_treads.put(orig_realm, t);
-                                                        t.start();
+                                                            });
+                                                            //dtls_handshake_treads.put(orig_realm, t);
+                                                            t.start();
+
+                                                        }
 
                                                     }
-                                                    
+
+                                                } catch (Exception ex) {
+                                                    java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
+                                                }
+                                            } 
+                                            // Answer (server -> client)
+                                            else if (cc == CC_DTLS_HANDSHAKE_SERVER) {
+                                            //else {
+
+                                                // Create socket if does not exists
+                                                if (!datagramOverDiameterSocket_inbound_client.containsKey(orig_realm)) {
+                                                    datagramOverDiameterSocket_inbound_client.put(orig_realm, new ConcurrentLinkedQueue<DatagramOverDiameterPacket>());
                                                 }
 
-                                            } catch (Exception ex) {
-                                                java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-                                            }
-                                        } 
-                                        // Answer (server -> client)
-                                        else {
-                                            
-                                            // Create socket if does not exists
-                                            if (!datagramOverDiameterSocket_inbound_client.containsKey(orig_realm)) {
-                                                datagramOverDiameterSocket_inbound_client.put(orig_realm, new ConcurrentLinkedQueue<DatagramOverDiameterPacket>());
-                                            }
+                                                datagramOverDiameterSocket_inbound_client.get(orig_realm).add(new DatagramOverDiameterPacket(orig_realm, new DatagramPacket(msg.getAvps().getAvp(AVP_DTLS_DATA).getOctetString(), msg.getAvps().getAvp(AVP_DTLS_DATA).getOctetString().length)));
 
-                                            datagramOverDiameterSocket_inbound_client.get(orig_realm).add(new DatagramOverDiameterPacket(orig_realm, new DatagramPacket(msg.getAvps().getAvp(AVP_DTLS_DATA).getOctetString(), msg.getAvps().getAvp(AVP_DTLS_DATA).getOctetString().length)));
-    
+                                            }
+                                            
+                                            // produce DTLS Diameter Answer message
+                                            Answer answer = ((IMessage)(msg)).createAnswer(ResultCode.SUCCESS);
+                                            if (msg.getAvps().getAvp(Avp.DESTINATION_HOST) != null) {
+                                                answer.getAvps().addAvp(Avp.ORIGIN_HOST, msg.getAvps().getAvp(Avp.DESTINATION_HOST).getRawData());
+                                            }
+                                            if (msg.getAvps().getAvp(Avp.DESTINATION_REALM) != null) {
+                                                answer.getAvps().addAvp(Avp.ORIGIN_REALM, msg.getAvps().getAvp(Avp.DESTINATION_REALM).getRawData());
+                                            }
+                                            sendDiameterMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), answer, false, lua_hmap);
                                         }
-                                           
-                                        
                                     }
-                                }
+                                } 
                      
                         return;
                     }
-                    
-
-                    
+                    // DTLS answer messages
+                    // Only targeting HPLMN
+                    if ((cc == CC_DTLS_HANDSHAKE_CLIENT || cc == CC_DTLS_HANDSHAKE_SERVER)
+                        && DiameterFirewallConfig.dtls_encryption.equals("true")
+                        && !msg.isRequest()) {
+                         
+                            // Drop DTLS answers
+                            return;       
+                    }
 
                     // ---------- Diameter encryption -----------
                     String session_id = ai + ":" +  cc + ":" +  orig_realm + ":" + msg.getEndToEndIdentifier();
@@ -1846,6 +1880,8 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                             // See jDiamter MessageParser.java, Line 111. long endToEndId = ((long) in.readInt() << 32) >>> 32;
                             long e2e_id = ((long) message.getEndToEndIdentifier() << 32) >>> 32;
                             message.setEndToEndIdentifier(e2e_id);
+                            
+                            message.setHopByHopIdentifier(randomGenerator.nextLong());
                             //
 
                             // to this as soon as possible to prevent concurrent threads to duplicate the autodiscovery
@@ -1860,7 +1896,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                                 message.getAvps().addAvp(Avp.DESTINATION_REALM, _dest_realm, true, false, true);
                             }
 
-                            message.setHeaderApplicationId(16777251);
+                            message.setHeaderApplicationId(AI_DESS_INTERFACE);
 
                             avp = msg.getAvps().getAvp(Avp.ORIGIN_REALM);
                             if (avp != null) {
@@ -2446,12 +2482,27 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
     }
     
     void dtls_sendDatagramOverDiameter(Association asctn, String _peer_realm, DatagramOverDiameterPacket p, String side, boolean forwardIndicator) {
-        IMessage message = parser.createEmptyMessage(CC_DTLS_HANDSHAKE, 16777251);
+        
+        IMessage message;
+        
+        if (side.equals("client")) {
+            message = parser.createEmptyMessage(CC_DTLS_HANDSHAKE_CLIENT, AI_DESS_INTERFACE);
+        } else if (side.equals("server")) {
+            message = parser.createEmptyMessage(CC_DTLS_HANDSHAKE_SERVER, AI_DESS_INTERFACE);
+        } else {
+            logger.error("dtls_sendDatagramOverDiameter: Not client and not server side.");
+            return;
+        }
+        message.setRequest(true);
+        
+        //IMessage message = parser.createEmptyMessage(CC_DTLS_HANDSHAKE, AI_DESS_INTERFACE);
 
         // Workaround. E2E ID long value should be clamp to 32bit before use. It is clamped in proto encoding. 
         // See jDiamter MessageParser.java, Line 111. long endToEndId = ((long) in.readInt() << 32) >>> 32;
         long e2e_id = ((long) message.getEndToEndIdentifier() << 32) >>> 32;
         message.setEndToEndIdentifier(e2e_id);
+        
+        message.setHopByHopIdentifier(randomGenerator.nextLong());
         //
 
         // to this as soon as possible to prevent concurrent threads to duplicate the autodiscovery
@@ -2467,18 +2518,21 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
         //}
         
         // TODO currently used first HPLMN realm as orig realm
-        if (side.equals("client")) {
-            message.setRequest(true);
-        } else if (side.equals("server")) {
-            message.setRequest(false);
-        } else {
-            logger.error("dtls_sendDatagramOverDiameter: Not client and not server side.");
-        }
+        //if (side.equals("client")) {
+        //    message.setRequest(true);
+        //} else if (side.equals("server")) {
+        //    message.setRequest(false);
+        //} else {
+        //    logger.error("dtls_sendDatagramOverDiameter: Not client and not server side.");
+        //}
+        
         message.getAvps().addAvp(Avp.DESTINATION_REALM, _peer_realm, true, false, true);
-        message.getAvps().addAvp(Avp.ORIGIN_REALM, DiameterFirewallConfig.hplmn_realms.firstKey(), true, false, true);  
+        message.getAvps().addAvp(Avp.DESTINATION_HOST, _peer_realm, true, false, true);
+        message.getAvps().addAvp(Avp.ORIGIN_REALM, DiameterFirewallConfig.hplmn_realms.firstKey(), true, false, true);
+        message.getAvps().addAvp(Avp.ORIGIN_HOST, DiameterFirewallConfig.hplmn_realms.firstKey(), true, false, true);  
         message.getAvps().addAvp(AVP_DTLS_DATA, p.getP().getData());
 
-        //message.setHeaderApplicationId(16777251);
+        //message.setHeaderApplicationId(AI_DESS_INTERFACE);
 
         /*// --------- Add also Diameter signature ------------
         if (DiameterFirewallConfig.origin_realm_signing.containsKey(orig_realm)) {
