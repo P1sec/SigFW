@@ -54,7 +54,7 @@
 				],
 				"application_id_whitelist": [
 					"0",
-					"11111111",
+					"16777360",
 					"16777251"
 				],
 				"command_code_blacklist": [

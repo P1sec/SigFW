@@ -12,28 +12,28 @@
 	&myEntity;
     -->
 
-<vendor vendor-id="DESS"				code="0"	name="GSMA DESS"/>
+<vendor vendor-id="GSMA-DESS"				code="46304"	name="GSMA-DESS"/>
 
 <!-- NOTE the Application ID is not assigned by IANA http://www.iana.org/assignments/aaa-parameters/aaa-parameters.xml -->
-<application id="11111111" name="GSMA DESS interface" uri="none">
+<application id="16777360" name="GSMA DESS interface" uri="none">
 
-	<command name="DTLS HANDSHAKE CLIENT" code="1111" vendor-id="DESS"/>
-	<command name="DTLS HANDSHAKE SERVER" code="1112" vendor-id="DESS"/>
+	<command name="DESS-DTLS-Handshake-Client-Request/Response" code="8388737" vendor-id="GSMA-DESS"/>
+	<command name="DESS-DTLS-Handshake-Server-Request/Response" code="8388738" vendor-id="GSMA-DESS"/>
 
 
-	<avp name="DESS-DIGITAL-SIGNATURE" code="1001" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="DESS" may-encrypt="yes">
+	<avp name="DESS-DIGITAL-SIGNATURE" code="1001" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="GSMA-DESS" may-encrypt="yes">
 		<type type-name="OctetString"/>
 	</avp>
 
-	<avp name="DESS-SYSTEM-TIME" code="1002" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="DESS" may-encrypt="yes">
+	<avp name="DESS-SYSTEM-TIME" code="1002" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="GSMA-DESS" may-encrypt="yes">
 		<type type-name="OctetString"/>
 	</avp>
 
-	<avp name="DESS-SIGNING-REALM" code="1105" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="DESS" may-encrypt="yes">
+	<avp name="DESS-SIGNING-REALM" code="1105" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="GSMA-DESS" may-encrypt="yes">
 		<type type-name="DiameterIdentity"/>
 	</avp>
 
-	<avp name="DESS-SIGNATURE" code="1000" vendor-id="DESS">
+	<avp name="DESS-SIGNATURE" code="1000" vendor-id="GSMA-DESS">
 		<grouped>
 			<gavp name="DESS-DIGITAL-SIGNATURE"/>
 			<gavp name="DESS-SYSTEM-TIME"/>
@@ -41,11 +41,11 @@
 		</grouped>
 	</avp>
 
-	<avp name="DESS-DTLS-DATA" code="1112" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="DESS" may-encrypt="yes">
+	<avp name="DESS-DTLS-DATA" code="1112" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="GSMA-DESS" may-encrypt="yes">
 		<type type-name="OctetString"/>
 	</avp>
 
-	<avp name="ENCRYPTED-GROUPED-DTLS" code="1115" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="DESS" may-encrypt="yes">
+	<avp name="ENCRYPTED-GROUPED-DTLS" code="1115" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="GSMA-DESS" may-encrypt="yes">
 		<type type-name="OctetString"/>
 	</avp>
 

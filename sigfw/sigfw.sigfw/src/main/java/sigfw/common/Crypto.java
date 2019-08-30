@@ -27,6 +27,7 @@ package sigfw.common;
 import com.p1sec.sigfw.SigFW_interface.CryptoInterface;
 import diameterfw.DiameterFirewall;
 import static diameterfw.DiameterFirewall.AVP_DESS_SIGNING_REALM;
+import static diameterfw.DiameterFirewall.VENDOR_ID;
 import diameterfw.DiameterFirewallConfig;
 import java.io.IOException;
 import java.io.InputStream;
@@ -191,13 +192,13 @@ public class Crypto implements CryptoInterface {
                 AvpSet _avps = message.getAvps();
                 
                 // Add DESS_SIGNATURE grouped AVP
-                AvpSet avps = _avps.addGroupedAvp(AVP_DESS_SIGNATURE, false, false);
+                AvpSet avps = _avps.addGroupedAvp(AVP_DESS_SIGNATURE, VENDOR_ID, false, false);
                 
                 // Add DESS_SIGNING_REALM inside
-                avps.addAvp(AVP_DESS_SIGNING_REALM, signingRealm.getBytes());
+                avps.addAvp(AVP_DESS_SIGNING_REALM, signingRealm.getBytes(), VENDOR_ID, false, false);
 
                 boolean signed = false;
-                if (avps.getAvp(AVP_DESS_DIGITAL_SIGNATURE) != null) {
+                if (avps.getAvp(AVP_DESS_DIGITAL_SIGNATURE, VENDOR_ID) != null) {
                     signed = true;
                 }
                 
@@ -223,7 +224,7 @@ public class Crypto implements CryptoInterface {
                     }
                     
                     // Add DESS_SYSTEM_TIME inside
-                    avps.addAvp(AVP_DESS_SYSTEM_TIME, TVP);
+                    avps.addAvp(AVP_DESS_SYSTEM_TIME, TVP, VENDOR_ID, false, false);
                     
                     // Signature             
                     try {       
@@ -254,11 +255,11 @@ public class Crypto implements CryptoInterface {
                         }
                         // EC
                         else if (privateKey instanceof ECPrivateKey) {
-                            _avps.removeAvp(AVP_DESS_SIGNATURE);
+                            _avps.removeAvp(AVP_DESS_SIGNATURE, VENDOR_ID);
                             logger.warn("EC Public Key algorithm not implemented");
                             return;
                         } else {
-                            _avps.removeAvp(AVP_DESS_SIGNATURE);
+                            _avps.removeAvp(AVP_DESS_SIGNATURE, VENDOR_ID);
                             logger.warn("Unknown Private Key algorithm");
                             return;
                         }
@@ -267,13 +268,13 @@ public class Crypto implements CryptoInterface {
                         logger.debug("Adding Diameter Signature: " + Base64.getEncoder().encodeToString(signatureBytes));
 
                         // Add AVP_DESS_SIGNATURE inside
-                        avps.addAvp(AVP_DESS_DIGITAL_SIGNATURE, signatureBytes);
+                        avps.addAvp(AVP_DESS_DIGITAL_SIGNATURE, signatureBytes, VENDOR_ID, false, false);
 
                     } catch (InvalidKeyException ex) {
-                        _avps.removeAvp(AVP_DESS_SIGNATURE);
+                        _avps.removeAvp(AVP_DESS_SIGNATURE, VENDOR_ID);
                         java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
                     } catch (SignatureException ex) {
-                        _avps.removeAvp(AVP_DESS_SIGNATURE);
+                        _avps.removeAvp(AVP_DESS_SIGNATURE, VENDOR_ID);
                         java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
                     }
                 }        
@@ -301,7 +302,7 @@ public class Crypto implements CryptoInterface {
         
         AvpSet _avps = message.getAvps();
         
-        Avp _a = _avps.getAvp(AVP_DESS_SIGNATURE);
+        Avp _a = _avps.getAvp(AVP_DESS_SIGNATURE, VENDOR_ID);
         if (_a == null) {
             logger.debug("");
             return "DIAMETER FW: Missing DIAMETER signature (AVP_DESS_SIGNATURE).";
@@ -322,7 +323,7 @@ public class Crypto implements CryptoInterface {
             if (a_origin_realm != null && a_origin_realm.getDiameterURI() != null && a_origin_realm.getDiameterURI().getFQDN() != null) {
                 orig_realm = a_origin_realm.getDiameterURI().getFQDN();
             }
-            Avp a_signing_realm = avps.getAvp(AVP_DESS_SIGNING_REALM);
+            Avp a_signing_realm = avps.getAvp(AVP_DESS_SIGNING_REALM, VENDOR_ID);
             if (a_signing_realm != null && a_signing_realm.getDiameterURI() != null && a_signing_realm.getDiameterURI().getFQDN() != null) {
                 signing_realm = a_signing_realm.getDiameterURI().getFQDN();
             } else if (orig_realm != null) {
@@ -333,14 +334,14 @@ public class Crypto implements CryptoInterface {
             //
 
             // get timestamp
-            Avp a_system_time = avps.getAvp(AVP_DESS_SYSTEM_TIME);
+            Avp a_system_time = avps.getAvp(AVP_DESS_SYSTEM_TIME, VENDOR_ID);
             if (a_system_time == null) {
                 return "DIAMETER FW: Invbalid message signature. Missing AVP_DESS_SYSTEM_TIME.";
             }
             //
 
             // Get signature payload
-            Avp a_digital_signature = avps.getAvp(AVP_DESS_DIGITAL_SIGNATURE);
+            Avp a_digital_signature = avps.getAvp(AVP_DESS_DIGITAL_SIGNATURE, VENDOR_ID);
             if (a_digital_signature == null) {
                 return "DIAMETER FW: Invbalid message signature. Missing AVP_DESS_DIGITAL_SIGNATURE.";
             }
@@ -388,7 +389,7 @@ public class Crypto implements CryptoInterface {
             //
 
             // remove all signature components from the message
-            _avps.removeAvp(AVP_DESS_SIGNATURE);                  
+            _avps.removeAvp(AVP_DESS_SIGNATURE, VENDOR_ID);                  
 
             // Verify Signature
             byte[] ad;
@@ -525,7 +526,7 @@ public class Crypto implements CryptoInterface {
                         cipherText = concatByteArray(SPI, cipherText);
 
                         //logger.debug("Add AVP Encrypted. Current index = " + i);
-                        avps.insertAvp(i, AVP_ENCRYPTED, cipherText, false, false);
+                        avps.insertAvp(i, AVP_ENCRYPTED, cipherText, VENDOR_ID, false, true);
 
                         avps.removeAvpByIndex(i + 1);
 
@@ -584,7 +585,7 @@ public class Crypto implements CryptoInterface {
             
             //logger.debug("AVP[" + i + "] Code = " + a.getCode());
             
-            if (a.getCode() == AVP_ENCRYPTED) {
+            if (a.getCode() == AVP_ENCRYPTED && a.isVendorId() && a.getVendorId() == VENDOR_ID) {
                 logger.debug("Diameter Decryption of Encrypted AVP");
                     
                 PrivateKey privateKey = keyPair.getPrivate();
@@ -650,7 +651,7 @@ public class Crypto implements CryptoInterface {
                         //avps.insertAvp(i, ByteBuffer.wrap(cc).order(ByteOrder.BIG_ENDIAN).getInt(), d, false, false);
 
                         AvpImpl _a = (AvpImpl)Utils.decodeAvp(decryptedText);
-                        avps.insertAvp(i, _a.getCode(), _a.getRawData(), _a.vendorID, _a.isMandatory, false);
+                        avps.insertAvp(i, _a.getCode(), _a.getRawData(), _a.vendorID, _a.isMandatory, _a.isEncrypted);
 
                         avps.removeAvpByIndex(i + 1);
 
@@ -672,7 +673,7 @@ public class Crypto implements CryptoInterface {
                     logger.warn("Unknown Private Key algorithm");
                     return "";
                 }
-            } else if (a.getCode() == AVP_ENCRYPTED_GROUPED) {
+            } else if (a.getCode() == AVP_ENCRYPTED_GROUPED && a.isVendorId() && a.getVendorId() == VENDOR_ID) {
                 logger.debug("Diameter Decryption of Grouped Encrypted AVP");
                 
                 PrivateKey privateKey = keyPair.getPrivate();
@@ -746,7 +747,7 @@ public class Crypto implements CryptoInterface {
                         for (int j = 0; j < _avps.size(); j++) {
                             AvpImpl _a = (AvpImpl)_avps.getAvpByIndex(j);
                             //logger.debug("addAVP = " + _a.getCode());
-                            avps.insertAvp(i, _a.getCode(), _a.getRawData(), _a.vendorID, _a.isMandatory, false);
+                            avps.insertAvp(i, _a.getCode(), _a.getRawData(), _a.vendorID, _a.isMandatory, _a.isEncrypted);
                         }
                         avps.removeAvpByIndex(i + _avps.size());
 
@@ -776,7 +777,7 @@ public class Crypto implements CryptoInterface {
                     logger.warn("Unknown Private Key algorithm");
                     return "";
                 }
-            } else if (a.getCode() == AVP_ENCRYPTED_GROUPED_INDEXED) {
+            } else if (a.getCode() == AVP_ENCRYPTED_GROUPED_INDEXED && a.isVendorId() && a.getVendorId() == VENDOR_ID) {
                 logger.warn("Diameter Decryption of Grouped Indexed Encrypted AVP is not supported by this SigFW version");
                 return "";
             }
@@ -822,7 +823,7 @@ public class Crypto implements CryptoInterface {
         //logger.debug("== diameterEncrypt_v2 ==");
         AvpSet avps = message.getAvps();
         
-        AvpSet erAvp = avps.addGroupedAvp(AVP_ENCRYPTED_GROUPED);
+        AvpSet erAvp = avps.addGroupedAvp(AVP_ENCRYPTED_GROUPED, VENDOR_ID, false, true);
         
         for (int i = 0; i < avps.size(); i++) {
             Avp a = avps.getAvpByIndex(i);
@@ -881,8 +882,8 @@ public class Crypto implements CryptoInterface {
                 cipherText = concatByteArray(SPI, cipherText);
 
                 //logger.debug("Add AVP Grouped Encrypted. Current index");
-                avps.removeAvp(AVP_ENCRYPTED_GROUPED);
-                avps.addAvp(AVP_ENCRYPTED_GROUPED, cipherText, false, false);
+                avps.removeAvp(AVP_ENCRYPTED_GROUPED, VENDOR_ID);
+                avps.addAvp(AVP_ENCRYPTED_GROUPED, cipherText, VENDOR_ID, false, true);
 
             } catch (IllegalBlockSizeException ex) {
                 //java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
