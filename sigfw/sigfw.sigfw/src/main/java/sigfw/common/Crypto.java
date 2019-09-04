@@ -26,7 +26,6 @@ package sigfw.common;
 
 import com.p1sec.sigfw.SigFW_interface.CryptoInterface;
 import diameterfw.DiameterFirewall;
-import static diameterfw.DiameterFirewall.AVP_DESS_SIGNING_REALM;
 import static diameterfw.DiameterFirewall.VENDOR_ID;
 import diameterfw.DiameterFirewallConfig;
 import java.io.IOException;
@@ -108,6 +107,7 @@ public class Crypto implements CryptoInterface {
     static final public int AVP_DESS_SIGNATURE = 1000;
     static final public int AVP_DESS_DIGITAL_SIGNATURE = 1001;
     static final public int AVP_DESS_SYSTEM_TIME = 1002;
+    static final public int AVP_DESS_SIGNING_REALM = 1003;
     
     static final private Long OC_SIGNATURE = 100L;
     

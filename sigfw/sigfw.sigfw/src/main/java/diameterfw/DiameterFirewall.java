@@ -326,22 +326,23 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
 
     static final private String persistDir = "XmlDiameterFirewall";
     
+    // proprietary autodiscovery used for asymetric encryption
+    // not according to IANA and GSMA FS.19
     static final private int CC_AUTO_ENCRYPTION = 999;
     static final private int AVP_AUTO_ENCRYPTION_CAPABILITIES = 1101;
     static final private int AVP_AUTO_ENCRYPTION_REALM = 1102;
     static final private int AVP_AUTO_ENCRYPTION_PUBLIC_KEY = 1103;
     static final private int AVP_AUTO_ENCRYPTION_PUBLIC_KEY_TYPE = 1104;
-    static final public int AVP_DESS_SIGNING_REALM = 1105;
+    //
     
     // Command Code for DatagramOverDiameterPacket 
     static final private int AI_DESS_INTERFACE = 16777360;
     static final public int VENDOR_ID = 46304;
     static final private int CC_DTLS_HANDSHAKE_CLIENT = 8388737;     // DTLS handshake messages
     static final private int CC_DTLS_HANDSHAKE_SERVER = 8388738;     // DTLS handshake messages
-    //static final private int CC_DTLS_HANDSHAKE_REQUESTED = 1112;    // handshake requested by server
-    static final private int AVP_DTLS_DATA = 1112;  
-    static final private int AVP_ENCRYPTED_GROUPED_DTLS = 1115;
-
+    static final private int AVP_DESS_ENCRYPTED = 2000;
+    static final private int AVP_DESS_DTLS_DATA = 2001;  
+    
     /**
      * Reset Unit Testing Flags
      */
@@ -1179,21 +1180,6 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                             && cc != CC_DTLS_HANDSHAKE_CLIENT && cc != CC_DTLS_HANDSHAKE_SERVER) {
                         // ------------- Diameter verify --------------
                         if (DiameterFirewallConfig.origin_realm_verify.containsKey(orig_realm)) {
-                            /*if (msg.getAvps().getAvp(AVP_DESS_SIGNING_REALM) == null) {
-                                // Missing AVP_DESS_SIGNING_REALM, message dropped
-                                firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "Missing AVP_DESS_SIGNING_REALM, message dropped", lua_hmap);
-                                return;
-                            }
-                            String signing_realm;
-                            try {
-                                signing_realm = new String(msg.getAvps().getAvp(AVP_DESS_SIGNING_REALM).getOctetString());
-                            } catch (AvpDataException ex) {
-                                //java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
-                                firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "Decoding error with AVP_DESS_SIGNING_REALM, message dropped", lua_hmap);
-                                return;
-                            }
-                            PublicKey publicKey = DiameterFirewallConfig.origin_realm_verify_signing_realm.get(orig_realm + ":" + signing_realm);
-                            */
                             String r = crypto.diameterVerify(msg, DiameterFirewallConfig.origin_realm_verify_signing_realm);
                             if (!r.equals("")) {
                                 firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, r, lua_hmap);
@@ -1234,7 +1220,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                             }
                         } 
                         // No DTLS engine, but recieved DTLS encrypted data
-                        else if (msg.getAvps().getAvp(AVP_ENCRYPTED_GROUPED_DTLS, VENDOR_ID) != null) {
+                        else if (msg.getAvps().getAvp(AVP_DESS_ENCRYPTED, VENDOR_ID) != null) {
                             needDTLSHandshakeReason = "needDTLSHandshake indicated, because no DTLS engine, but recieved Request with DTLS encrypted data from realm: " + orig_realm;
                             
                             needDTLSHandshake = true;
@@ -1275,7 +1261,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                             }
                         }
                         // No DTLS engine, but recieved DTLS encrypted data
-                        else if (msg.getAvps().getAvp(AVP_ENCRYPTED_GROUPED_DTLS, VENDOR_ID) != null) {
+                        else if (msg.getAvps().getAvp(AVP_DESS_ENCRYPTED, VENDOR_ID) != null) {
                             needDTLSHandshake = true;
                             
                             needDTLSHandshakeReason = "needDTLSHandshake indicated, because no DTLS engine, but recieved Answer with DTLS encrypted data from realm: " + orig_realm;
@@ -1583,7 +1569,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                                 // process only requests
                                 if (msg.isRequest()) {
                                     if (msg.getAvps() != null) {
-                                        if (msg.getAvps().getAvp(AVP_DTLS_DATA, VENDOR_ID) != null) {
+                                        if (msg.getAvps().getAvp(AVP_DESS_DTLS_DATA, VENDOR_ID) != null) {
 
                                             logger.info("Received DTLS handshake message from realm: " + orig_realm);
 
@@ -1596,7 +1582,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                                                     datagramOverDiameterSocket_inbound_server.put(orig_realm, new ConcurrentLinkedQueue<DatagramOverDiameterPacket>());
                                                 }
 
-                                                datagramOverDiameterSocket_inbound_server.get(orig_realm).add(new DatagramOverDiameterPacket(orig_realm, new DatagramPacket(msg.getAvps().getAvp(AVP_DTLS_DATA, VENDOR_ID).getOctetString(), msg.getAvps().getAvp(AVP_DTLS_DATA, VENDOR_ID).getOctetString().length)));
+                                                datagramOverDiameterSocket_inbound_server.get(orig_realm).add(new DatagramOverDiameterPacket(orig_realm, new DatagramPacket(msg.getAvps().getAvp(AVP_DESS_DTLS_DATA, VENDOR_ID).getOctetString(), msg.getAvps().getAvp(AVP_DESS_DTLS_DATA, VENDOR_ID).getOctetString().length)));
 
 
                                                 boolean needHandshake = false;
@@ -1678,7 +1664,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                                                     datagramOverDiameterSocket_inbound_client.put(orig_realm, new ConcurrentLinkedQueue<DatagramOverDiameterPacket>());
                                                 }
 
-                                                datagramOverDiameterSocket_inbound_client.get(orig_realm).add(new DatagramOverDiameterPacket(orig_realm, new DatagramPacket(msg.getAvps().getAvp(AVP_DTLS_DATA, VENDOR_ID).getOctetString(), msg.getAvps().getAvp(AVP_DTLS_DATA, VENDOR_ID).getOctetString().length)));
+                                                datagramOverDiameterSocket_inbound_client.get(orig_realm).add(new DatagramOverDiameterPacket(orig_realm, new DatagramPacket(msg.getAvps().getAvp(AVP_DESS_DTLS_DATA, VENDOR_ID).getOctetString(), msg.getAvps().getAvp(AVP_DESS_DTLS_DATA, VENDOR_ID).getOctetString().length)));
 
                                             }
                                             
@@ -2531,7 +2517,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
         message.getAvps().addAvp(Avp.DESTINATION_HOST, _peer_realm, true, false, true);
         message.getAvps().addAvp(Avp.ORIGIN_REALM, DiameterFirewallConfig.hplmn_realms.firstKey(), true, false, true);
         message.getAvps().addAvp(Avp.ORIGIN_HOST, DiameterFirewallConfig.hplmn_realms.firstKey(), true, false, true);  
-        message.getAvps().addAvp(AVP_DTLS_DATA, p.getP().getData(), VENDOR_ID, false, false);
+        message.getAvps().addAvp(AVP_DESS_DTLS_DATA, p.getP().getData(), VENDOR_ID, false, false);
 
         //message.setHeaderApplicationId(AI_DESS_INTERFACE);
 
@@ -2636,7 +2622,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
         
         AvpSet avps = message.getAvps();
         
-        AvpSet erAvp = avps.addGroupedAvp(AVP_ENCRYPTED_GROUPED_DTLS, VENDOR_ID, false, true);
+        AvpSet erAvp = avps.addGroupedAvp(AVP_DESS_ENCRYPTED, VENDOR_ID, false, true);
         
         for (int i = 0; i < avps.size(); i++) {
             Avp a = avps.getAvpByIndex(i);
@@ -2652,7 +2638,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                     a.getCode() != Avp.ROUTE_RECORD &&
                     a.getCode() != Crypto.AVP_ENCRYPTED &&
                     a.getCode() != Crypto.AVP_ENCRYPTED_GROUPED &&
-                    a.getCode() != AVP_ENCRYPTED_GROUPED_DTLS
+                    a.getCode() != AVP_DESS_ENCRYPTED
                 ) {
                     erAvp.addAvp(a.getCode(), a.getRawData(), a.getVendorId(), a.isMandatory(), a.isEncrypted());
                     avps.removeAvpByIndex(i);
@@ -2690,8 +2676,8 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
             cipherTextBuffer.get(cipherText);
             
             //logger.debug("Add AVP Grouped Encrypted. Current index");
-            avps.removeAvp(AVP_ENCRYPTED_GROUPED_DTLS, VENDOR_ID);
-            avps.addAvp(AVP_ENCRYPTED_GROUPED_DTLS, cipherText, VENDOR_ID, false, true);
+            avps.removeAvp(AVP_DESS_ENCRYPTED, VENDOR_ID);
+            avps.addAvp(AVP_DESS_ENCRYPTED, cipherText, VENDOR_ID, false, true);
 
         } catch (Exception ex) {
             java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
@@ -2726,7 +2712,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
             
             //logger.debug("AVP[" + i + "] Code = " + a.getCode());
             
-            if (a.getCode() == AVP_ENCRYPTED_GROUPED_DTLS && a.isVendorId() && a.getVendorId() == VENDOR_ID) {
+            if (a.getCode() == AVP_DESS_ENCRYPTED && a.isVendorId() && a.getVendorId() == VENDOR_ID) {
                 AvpSetImpl _avps;
                 try {
                     logger.debug("Diameter Decryption of Grouped Encrypted DTLS AVP");
@@ -2838,7 +2824,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
         // cloned AVPs
         AvpSet avps = ((Message) ((IMessage) message).clone()).getAvps();
         
-        AvpSet erAvp = avps.addGroupedAvp(AVP_ENCRYPTED_GROUPED_DTLS, VENDOR_ID, false, true);
+        AvpSet erAvp = avps.addGroupedAvp(AVP_DESS_ENCRYPTED, VENDOR_ID, false, true);
         
         // Fill the AVP_ENCRYPTED_GROUPED_DTLS with cloned AVPs
         for (int i = 0; i <_avps.size(); i++) {
@@ -2855,7 +2841,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                     a.getCode() != Avp.ROUTE_RECORD &&
                     a.getCode() != Crypto.AVP_ENCRYPTED &&
                     a.getCode() != Crypto.AVP_ENCRYPTED_GROUPED &&
-                    a.getCode() != AVP_ENCRYPTED_GROUPED_DTLS
+                    a.getCode() != AVP_DESS_ENCRYPTED
                 ) {
                     erAvp.addAvp(a.getCode(), a.getRawData(), a.getVendorId(), a.isMandatory(), a.isEncrypted());
                     //avps.removeAvpByIndex(i);
@@ -2901,7 +2887,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
             
             //logger.debug("Add AVP Grouped Encrypted. Current index");
             //_avps.removeAvp(AVP_ENCRYPTED_GROUPED_DTLS);
-            _avps.addAvp(AVP_ENCRYPTED_GROUPED_DTLS, cipherText, VENDOR_ID, false, true);
+            _avps.addAvp(AVP_DESS_ENCRYPTED, cipherText, VENDOR_ID, false, true);
 
         } catch (Exception ex) {
             java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);
@@ -2937,7 +2923,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
             
             //logger.debug("AVP[" + i + "] Code = " + a.getCode());
             
-            if (a.getCode() == AVP_ENCRYPTED_GROUPED_DTLS && a.isVendorId() && a.getVendorId() == VENDOR_ID) {
+            if (a.getCode() == AVP_DESS_ENCRYPTED && a.isVendorId() && a.getVendorId() == VENDOR_ID) {
                 AvpSetImpl _avps;
                 try {
                     logger.debug("Diameter Decryption of Grouped Encrypted DTLS AVP");
@@ -3015,7 +3001,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                     avps.removeAvpByIndex(i + _avps.size());*/
                     
                     mergeAVPLists(avps, _avps);
-                    avps.removeAvp(AVP_ENCRYPTED_GROUPED_DTLS, VENDOR_ID);                   
+                    avps.removeAvp(AVP_DESS_ENCRYPTED, VENDOR_ID);                   
                     
                 } catch (IOException ex) {
                     java.util.logging.Logger.getLogger(DiameterFirewall.class.getName()).log(Level.SEVERE, null, ex);

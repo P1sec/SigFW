@@ -14,7 +14,7 @@
 
 <vendor vendor-id="GSMA-DESS"				code="46304"	name="GSMA-DESS"/>
 
-<!-- NOTE the Application ID is not assigned by IANA http://www.iana.org/assignments/aaa-parameters/aaa-parameters.xml -->
+<!-- NOTE the Application ID and Command Codes are assigned by IANA https://www.iana.org/assignments/aaa-parameters/aaa-parameters.xhtml -->
 <application id="16777360" name="GSMA DESS interface" uri="none">
 
 	<command name="DESS-DTLS-Handshake-Client-Request/Response" code="8388737" vendor-id="GSMA-DESS"/>
@@ -29,7 +29,7 @@
 		<type type-name="OctetString"/>
 	</avp>
 
-	<avp name="DESS-SIGNING-REALM" code="1105" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="GSMA-DESS" may-encrypt="yes">
+	<avp name="DESS-SIGNING-REALM" code="1003" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="GSMA-DESS" may-encrypt="yes">
 		<type type-name="DiameterIdentity"/>
 	</avp>
 
@@ -41,11 +41,11 @@
 		</grouped>
 	</avp>
 
-	<avp name="DESS-DTLS-DATA" code="1112" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="GSMA-DESS" may-encrypt="yes">
+	<avp name="DESS-DTLS-DATA" code="2001" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="GSMA-DESS" may-encrypt="yes">
 		<type type-name="OctetString"/>
 	</avp>
 
-	<avp name="ENCRYPTED-GROUPED-DTLS" code="1115" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="GSMA-DESS" may-encrypt="yes">
+	<avp name="DESS-ENCRYPTED" code="2000" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="GSMA-DESS" may-encrypt="yes">
 		<type type-name="OctetString"/>
 	</avp>
 
