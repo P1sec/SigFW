@@ -108,6 +108,9 @@ public class Crypto implements CryptoInterface {
     static final public int AVP_DESS_DIGITAL_SIGNATURE = 1001;
     static final public int AVP_DESS_SYSTEM_TIME = 1002;
     static final public int AVP_DESS_SIGNING_REALM = 1003;
+    static final public int AVP_DESS_DIGITAL_SIGNATURE_TYPE = 1004;
+    static final public int ENUM_DESS_DIGITAL_SIGNATURE_TYPE_RSA4096_with_SHA256 = 0;
+    static final public int ENUM_DESS_DIGITAL_SIGNATURE_TYPE_ECDSA_with_SHA256 = 1;
     
     static final private Long OC_SIGNATURE = 100L;
     
@@ -195,7 +198,7 @@ public class Crypto implements CryptoInterface {
                 AvpSet avps = _avps.addGroupedAvp(AVP_DESS_SIGNATURE, VENDOR_ID, false, false);
                 
                 // Add DESS_SIGNING_REALM inside
-                avps.addAvp(AVP_DESS_SIGNING_REALM, signingRealm.getBytes(), VENDOR_ID, false, false);
+                avps.addAvp(AVP_DESS_SIGNING_REALM, signingRealm.getBytes(), VENDOR_ID, true, false);
 
                 boolean signed = false;
                 if (avps.getAvp(AVP_DESS_DIGITAL_SIGNATURE, VENDOR_ID) != null) {
@@ -224,7 +227,7 @@ public class Crypto implements CryptoInterface {
                     }
                     
                     // Add DESS_SYSTEM_TIME inside
-                    avps.addAvp(AVP_DESS_SYSTEM_TIME, TVP, VENDOR_ID, false, false);
+                    avps.addAvp(AVP_DESS_SYSTEM_TIME, TVP, VENDOR_ID, true, false);
                     
                     // Signature             
                     try {       
@@ -252,10 +255,15 @@ public class Crypto implements CryptoInterface {
 
                             signatureRSA.update(dataToSign.getBytes());
                             signatureBytes = signatureRSA.sign();
+                            
+                            
+                            avps.addAvp(AVP_DESS_DIGITAL_SIGNATURE_TYPE, ENUM_DESS_DIGITAL_SIGNATURE_TYPE_RSA4096_with_SHA256, VENDOR_ID, true, false);
                         }
                         // EC
                         else if (privateKey instanceof ECPrivateKey) {
                             _avps.removeAvp(AVP_DESS_SIGNATURE, VENDOR_ID);
+                            avps.addAvp(AVP_DESS_DIGITAL_SIGNATURE_TYPE, ENUM_DESS_DIGITAL_SIGNATURE_TYPE_ECDSA_with_SHA256, VENDOR_ID, true, false);
+                            
                             logger.warn("EC Public Key algorithm not implemented");
                             return;
                         } else {
@@ -268,7 +276,7 @@ public class Crypto implements CryptoInterface {
                         logger.debug("Adding Diameter Signature: " + Base64.getEncoder().encodeToString(signatureBytes));
 
                         // Add AVP_DESS_SIGNATURE inside
-                        avps.addAvp(AVP_DESS_DIGITAL_SIGNATURE, signatureBytes, VENDOR_ID, false, false);
+                        avps.addAvp(AVP_DESS_DIGITAL_SIGNATURE, signatureBytes, VENDOR_ID, true, false);
 
                     } catch (InvalidKeyException ex) {
                         _avps.removeAvp(AVP_DESS_SIGNATURE, VENDOR_ID);
@@ -340,12 +348,20 @@ public class Crypto implements CryptoInterface {
             }
             //
 
+            // Get signature type
+            Avp a_signature_type = avps.getAvp(AVP_DESS_DIGITAL_SIGNATURE_TYPE, VENDOR_ID);
+            if (a_signature_type == null) {
+                return "DIAMETER FW: Invbalid message signature. Missing AVP_DESS_DIGITAL_SIGNATURE_TYPE.";
+            }
+            //
+            
             // Get signature payload
             Avp a_digital_signature = avps.getAvp(AVP_DESS_DIGITAL_SIGNATURE, VENDOR_ID);
             if (a_digital_signature == null) {
                 return "DIAMETER FW: Invbalid message signature. Missing AVP_DESS_DIGITAL_SIGNATURE.";
             }
             //
+            
 
             // Verify timestamp
             byte[] t_ad;
@@ -420,12 +436,24 @@ public class Crypto implements CryptoInterface {
             }
 
             if (publicKey instanceof RSAPublicKey) {
+                
+                if (a_signature_type == null || a_signature_type.getInteger32() != ENUM_DESS_DIGITAL_SIGNATURE_TYPE_RSA4096_with_SHA256) {
+                    logger.warn("Configured Public Key type mismatch with type received in AVP_DESS_DIGITAL_SIGNATURE_TYPE");
+                    return "";
+                }
+                
                 signatureRSA.initVerify(publicKey);
                 signatureRSA.update(dataToSign.getBytes());
                 if (signatureBytes != null && signatureRSA.verify(signatureBytes)) {
                     return "";
                 }
             } else if (publicKey instanceof ECPublicKey) {
+                
+                if (a_signature_type == null || a_signature_type.getInteger32() != ENUM_DESS_DIGITAL_SIGNATURE_TYPE_ECDSA_with_SHA256) {
+                    logger.warn("Configured Public Key type mismatch with type received in AVP_DESS_DIGITAL_SIGNATURE_TYPE");
+                    return "";
+                }
+                
                 logger.warn("EC Public Key algorithm not implemented");
                 return "";
             } else {
