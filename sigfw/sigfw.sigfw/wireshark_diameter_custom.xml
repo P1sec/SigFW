@@ -44,6 +44,7 @@
 			<gavp name="DESS-DIGITAL-SIGNATURE"/>
 			<gavp name="DESS-SYSTEM-TIME"/>
 			<gavp name="DESS-SIGNING-REALM"/>
+			<gavp name="DESS-DIGITAL-SIGNATURE-TYPE"/>
 		</grouped>
 	</avp>
 

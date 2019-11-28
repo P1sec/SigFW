@@ -107,7 +107,7 @@ public class Crypto implements CryptoInterface {
     static final public int AVP_DESS_SIGNATURE = 1000;
     static final public int AVP_DESS_DIGITAL_SIGNATURE = 1001;
     static final public int AVP_DESS_SYSTEM_TIME = 1002;
-    static final public int AVP_DESS_SIGNING_REALM = 1003;
+    static final public int AVP_DESS_SIGNING_IDENTITY = 1003;
     static final public int AVP_DESS_DIGITAL_SIGNATURE_TYPE = 1004;
     static final public int ENUM_DESS_DIGITAL_SIGNATURE_TYPE_RSA4096_with_SHA256 = 0;
     static final public int ENUM_DESS_DIGITAL_SIGNATURE_TYPE_ECDSA_with_SHA256 = 1;
@@ -198,7 +198,7 @@ public class Crypto implements CryptoInterface {
                 AvpSet avps = _avps.addGroupedAvp(AVP_DESS_SIGNATURE, VENDOR_ID, false, false);
                 
                 // Add DESS_SIGNING_REALM inside
-                avps.addAvp(AVP_DESS_SIGNING_REALM, signingRealm.getBytes(), VENDOR_ID, true, false);
+                avps.addAvp(AVP_DESS_SIGNING_IDENTITY, signingRealm.getBytes(), VENDOR_ID, false, false);
 
                 boolean signed = false;
                 if (avps.getAvp(AVP_DESS_DIGITAL_SIGNATURE, VENDOR_ID) != null) {
@@ -227,7 +227,7 @@ public class Crypto implements CryptoInterface {
                     }
                     
                     // Add DESS_SYSTEM_TIME inside
-                    avps.addAvp(AVP_DESS_SYSTEM_TIME, TVP, VENDOR_ID, true, false);
+                    avps.addAvp(AVP_DESS_SYSTEM_TIME, TVP, VENDOR_ID, false, false);
                     
                     // Signature             
                     try {       
@@ -257,12 +257,12 @@ public class Crypto implements CryptoInterface {
                             signatureBytes = signatureRSA.sign();
                             
                             
-                            avps.addAvp(AVP_DESS_DIGITAL_SIGNATURE_TYPE, ENUM_DESS_DIGITAL_SIGNATURE_TYPE_RSA4096_with_SHA256, VENDOR_ID, true, false);
+                            avps.addAvp(AVP_DESS_DIGITAL_SIGNATURE_TYPE, ENUM_DESS_DIGITAL_SIGNATURE_TYPE_RSA4096_with_SHA256, VENDOR_ID, false, false);
                         }
                         // EC
                         else if (privateKey instanceof ECPrivateKey) {
                             _avps.removeAvp(AVP_DESS_SIGNATURE, VENDOR_ID);
-                            avps.addAvp(AVP_DESS_DIGITAL_SIGNATURE_TYPE, ENUM_DESS_DIGITAL_SIGNATURE_TYPE_ECDSA_with_SHA256, VENDOR_ID, true, false);
+                            avps.addAvp(AVP_DESS_DIGITAL_SIGNATURE_TYPE, ENUM_DESS_DIGITAL_SIGNATURE_TYPE_ECDSA_with_SHA256, VENDOR_ID, false, false);
                             
                             logger.warn("EC Public Key algorithm not implemented");
                             return;
@@ -276,7 +276,7 @@ public class Crypto implements CryptoInterface {
                         logger.debug("Adding Diameter Signature: " + Base64.getEncoder().encodeToString(signatureBytes));
 
                         // Add AVP_DESS_SIGNATURE inside
-                        avps.addAvp(AVP_DESS_DIGITAL_SIGNATURE, signatureBytes, VENDOR_ID, true, false);
+                        avps.addAvp(AVP_DESS_DIGITAL_SIGNATURE, signatureBytes, VENDOR_ID, false, false);
 
                     } catch (InvalidKeyException ex) {
                         _avps.removeAvp(AVP_DESS_SIGNATURE, VENDOR_ID);
@@ -331,7 +331,7 @@ public class Crypto implements CryptoInterface {
             if (a_origin_realm != null && a_origin_realm.getDiameterURI() != null && a_origin_realm.getDiameterURI().getFQDN() != null) {
                 orig_realm = a_origin_realm.getDiameterURI().getFQDN();
             }
-            Avp a_signing_realm = avps.getAvp(AVP_DESS_SIGNING_REALM, VENDOR_ID);
+            Avp a_signing_realm = avps.getAvp(AVP_DESS_SIGNING_IDENTITY, VENDOR_ID);
             if (a_signing_realm != null && a_signing_realm.getDiameterURI() != null && a_signing_realm.getDiameterURI().getFQDN() != null) {
                 signing_realm = a_signing_realm.getDiameterURI().getFQDN();
             } else if (orig_realm != null) {
