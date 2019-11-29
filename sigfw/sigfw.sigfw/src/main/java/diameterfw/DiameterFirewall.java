@@ -2111,7 +2111,8 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
             }
         };
         
-        sslCtx.init(kmf.getKeyManagers(), /*tmf.getTrustManagers()*/new TrustManager[] { tm }, /*null*/new java.security.SecureRandom());
+        //sslCtx.init(kmf.getKeyManagers(), /*tmf.getTrustManagers()*/new TrustManager[] { tm }, /*null*/new java.security.SecureRandom());
+        sslCtx.init(kmf.getKeyManagers(), tmf.getTrustManagers(), new java.security.SecureRandom());
 
         return sslCtx;
     }
@@ -2127,6 +2128,11 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
 
         engine.setUseClientMode(isClient);
         engine.setSSLParameters(paras);
+        
+        // Server requests client certificate authentication
+        if (!isClient) {
+            engine.setNeedClientAuth(true);
+        }
 
         return engine;
     }

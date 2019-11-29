@@ -103,7 +103,8 @@ public class DTLSOverDatagram {
         // create SSLEngine
         SSLEngine engine = createSSLEngine(false);
         //engine_server = engine;
-
+        
+        engine.setNeedClientAuth(true);
         // handshaking
         handshake(engine, socket, clientSocketAddr, "Server");
 
@@ -179,7 +180,9 @@ public class DTLSOverDatagram {
                     byte[] buf = new byte[BUFFER_SIZE];
                     DatagramPacket packet = new DatagramPacket(buf, buf.length);
                     try {
+                    //    System.out.println(side + ": START socket.receive(packet);");
                         socket.receive(packet);
+                    //    System.out.println(side + ": END socket.receive(packet);");
                     } catch (SocketTimeoutException ste) {
                         log(side, "Warning: " + ste);
 
@@ -207,7 +210,7 @@ public class DTLSOverDatagram {
                         continue;
                     }
                     
-                    printHex("Poll packet",
+                    printHex(side + ": Poll packet",
                                 packet.getData(), packet.getOffset(), packet.getLength());
 
                     iNet = ByteBuffer.wrap(buf, 0, packet.getLength());
@@ -595,7 +598,8 @@ public class DTLSOverDatagram {
             }
         };
         
-        sslCtx.init(kmf.getKeyManagers(), /*tmf.getTrustManagers()*/new TrustManager[] { tm }, null);
+        //sslCtx.init(kmf.getKeyManagers(), /*tmf.getTrustManagers()*/new TrustManager[] { tm }, null);
+        sslCtx.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
 
         return sslCtx;
     }
