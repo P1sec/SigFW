@@ -54,6 +54,7 @@ import java.util.Properties;
 import java.util.logging.Level;
 //import javafx.util.Pair;
 import java.util.AbstractMap;
+import java.util.Date;
 import java.util.SortedMap;
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
@@ -194,45 +195,36 @@ public class Crypto implements CryptoInterface {
                 
                 AvpSet _avps = message.getAvps();
                 
-                // Add DESS_SIGNATURE grouped AVP
-                AvpSet avps = _avps.addGroupedAvp(AVP_DESS_SIGNATURE, VENDOR_ID, false, false);
-                
-                // Add DESS_SIGNING_REALM inside
-                avps.addAvp(AVP_DESS_SIGNING_IDENTITY, signingRealm.getBytes(), VENDOR_ID, false, false);
-
                 boolean signed = false;
-                if (avps.getAvp(AVP_DESS_DIGITAL_SIGNATURE, VENDOR_ID) != null) {
+                if (_avps.getAvp(AVP_DESS_SIGNATURE, VENDOR_ID) != null) {
                     signed = true;
                 }
                 
                 if (!signed) {
-                    /*
-                    // Reserved (currently not used) - Signature Version
-                    // TODO
-                    byte[] VER = {0x00, 0x00, 0x00, 0x01};
-                    */
                     
-                    // TVP
-                    byte[] TVP = {0x00, 0x00, 0x00, 0x00};
-
-                    long t = System.currentTimeMillis()/100;    // in 0.1s
-                    TVP[0] = (byte) ((t >> 24) & 0xFF);
-                    TVP[1] = (byte) ((t >> 16) & 0xFF);
-                    TVP[2] = (byte) ((t >>  8) & 0xFF);
-                    TVP[3] = (byte) ((t >>  0) & 0xFF);
-
-                    long t_tvp = 0;
-                    for (int j = 0; j < TVP.length; j++) {
-                        t_tvp =  ((t_tvp << 8) + (TVP[j] & 0xff));
-                    }
+                    // Add DESS_SIGNATURE grouped AVP
+                    AvpSet avps = _avps.addGroupedAvp(AVP_DESS_SIGNATURE, VENDOR_ID, false, false);
+                    
+                    // Add DESS_SIGNING_REALM inside
+                    avps.addAvp(AVP_DESS_SIGNING_IDENTITY, signingRealm.getBytes(), VENDOR_ID, false, false);
                     
                     // Add DESS_SYSTEM_TIME inside
-                    avps.addAvp(AVP_DESS_SYSTEM_TIME, TVP, VENDOR_ID, false, false);
+                    long t = System.currentTimeMillis();
+                    Date date = new Date(t);
+                    avps.addAvp(AVP_DESS_SYSTEM_TIME, date, VENDOR_ID, false, false);
                     
-                    // Signature             
+                    // Add AVP_DESS_DIGITAL_SIGNATURE_TYPE inside
+                    if (privateKey instanceof RSAPrivateKey) {
+                        avps.addAvp(AVP_DESS_DIGITAL_SIGNATURE_TYPE, ENUM_DESS_DIGITAL_SIGNATURE_TYPE_RSA4096_with_SHA256, VENDOR_ID, false, false);
+                    }
+                    else if (privateKey instanceof ECPrivateKey) {
+                        avps.addAvp(AVP_DESS_DIGITAL_SIGNATURE_TYPE, ENUM_DESS_DIGITAL_SIGNATURE_TYPE_ECDSA_with_SHA256, VENDOR_ID, false, false);
+                    }
+                    
+                    // Add AVP_DESS_DIGITAL_SIGNATURE           
                     try {       
                         
-                        String dataToSign = message.getApplicationId() + ":" + message.getCommandCode() + ":" + message.getEndToEndIdentifier() + ":" + t_tvp;
+                        String dataToSign = message.getApplicationId() + ":" + message.getCommandCode() + ":" + message.getEndToEndIdentifier();
 
                         // jDiameter AVPs are not ordered, and the order could be changed by DRAs in IPX, so order AVPs by sorting base64 strings
                         List<String> strings = new ArrayList<String>();
@@ -255,15 +247,10 @@ public class Crypto implements CryptoInterface {
 
                             signatureRSA.update(dataToSign.getBytes());
                             signatureBytes = signatureRSA.sign();
-                            
-                            
-                            avps.addAvp(AVP_DESS_DIGITAL_SIGNATURE_TYPE, ENUM_DESS_DIGITAL_SIGNATURE_TYPE_RSA4096_with_SHA256, VENDOR_ID, false, false);
                         }
                         // EC
                         else if (privateKey instanceof ECPrivateKey) {
                             _avps.removeAvp(AVP_DESS_SIGNATURE, VENDOR_ID);
-                            avps.addAvp(AVP_DESS_DIGITAL_SIGNATURE_TYPE, ENUM_DESS_DIGITAL_SIGNATURE_TYPE_ECDSA_with_SHA256, VENDOR_ID, false, false);
-                            
                             logger.warn("EC Public Key algorithm not implemented");
                             return;
                         } else {
@@ -323,7 +310,7 @@ public class Crypto implements CryptoInterface {
         }
 
         try {
-            // Find signing realm
+            // Get AVP_DESS_SIGNING_IDENTITY
             String signing_realm = null;
             String orig_realm = null;
 
@@ -341,21 +328,21 @@ public class Crypto implements CryptoInterface {
             }
             //
 
-            // get timestamp
+            // Get AVP_DESS_SYSTEM_TIME
             Avp a_system_time = avps.getAvp(AVP_DESS_SYSTEM_TIME, VENDOR_ID);
             if (a_system_time == null) {
                 return "DIAMETER FW: Invbalid message signature. Missing AVP_DESS_SYSTEM_TIME.";
             }
             //
 
-            // Get signature type
+            // Get AVP_DESS_DIGITAL_SIGNATURE_TYPE
             Avp a_signature_type = avps.getAvp(AVP_DESS_DIGITAL_SIGNATURE_TYPE, VENDOR_ID);
             if (a_signature_type == null) {
                 return "DIAMETER FW: Invbalid message signature. Missing AVP_DESS_DIGITAL_SIGNATURE_TYPE.";
             }
             //
             
-            // Get signature payload
+            // Get AVP_DESS_DIGITAL_SIGNATURE
             Avp a_digital_signature = avps.getAvp(AVP_DESS_DIGITAL_SIGNATURE, VENDOR_ID);
             if (a_digital_signature == null) {
                 return "DIAMETER FW: Invbalid message signature. Missing AVP_DESS_DIGITAL_SIGNATURE.";
@@ -364,58 +351,29 @@ public class Crypto implements CryptoInterface {
             
 
             // Verify timestamp
-            byte[] t_ad;
-            t_ad = a_system_time.getOctetString();
+            Date date = a_system_time.getTime();
 
             byte[] signatureBytes = null;
-            long t_tvp = 0;
-            byte[] TVP = {0x00, 0x00, 0x00, 0x00};
-
-            /*
-            // Reserved (currently not used) - Signature Version
-            // TODO
-            int pos = 0;
-            byte[] VER = {0x00, 0x00, 0x00, 0x01};
-
-
-            pos = 4;
-            */
-            // TVP
-            if (t_ad != null && t_ad.length >= TVP.length) {
-                // ---- Verify TVP from Security header ----
-                long t = System.currentTimeMillis()/100;    // in 0.1s
-                TVP[0] = (byte) ((t >> 24) & 0xFF);
-                TVP[1] = (byte) ((t >> 16) & 0xFF);
-                TVP[2] = (byte) ((t >>  8) & 0xFF);
-                TVP[3] = (byte) ((t >>  0) & 0xFF);
-                t = 0;
-                for (int i = 0; i < TVP.length; i++) {
-                    t =  ((t << 8) + (TVP[i] & 0xff));
-                }
-
-                for (int i = 0; i < TVP.length; i++) {
-                    t_tvp =  ((t_tvp << 8) + (t_ad[i] & 0xff));
-                }
-
-                if (Math.abs(t_tvp-t) > diameter_tvp_time_window*10) {
-                    return "DIAMETER FW: DIAMETER verify signature. Wrong timestamp in TVP (received: " + t_tvp + ", current: " + t + ")";
-                }
-                // ---- End of Verify TVP ----
+            
+            // ---- Verify Timestamp ----
+            if (date != null) {
+                long t = System.currentTimeMillis();
+                
+                long t_received = date.getTime();
+                
+                if (Math.abs(t_received-t) > diameter_tvp_time_window*1000) {
+                    return "DIAMETER FW: DIAMETER verify signature. Wrong timestamp in TVP (received: " + t_received + ", current: " + t + ")";
+                }              
             }
-            //
+            // ---- End of Verify Timestamp ----
 
             // remove all signature components from the message
             _avps.removeAvp(AVP_DESS_SIGNATURE, VENDOR_ID);                  
 
             // Verify Signature
-            byte[] ad;
-            ad = a_digital_signature.getOctetString();
+            signatureBytes = a_digital_signature.getOctetString();
 
-            if (ad != null) {
-                signatureBytes = Arrays.copyOfRange(ad, TVP.length, ad.length);
-            }
-
-            String dataToSign = message.getApplicationId() + ":" + message.getCommandCode() + ":" + message.getEndToEndIdentifier() + ":" + t_tvp;
+            String dataToSign = message.getApplicationId() + ":" + message.getCommandCode() + ":" + message.getEndToEndIdentifier();
 
             // jDiameter AVPs are not ordered, so order AVPs by sorting base64 strings
             List<String> strings = new ArrayList<String>();
@@ -437,7 +395,7 @@ public class Crypto implements CryptoInterface {
 
             if (publicKey instanceof RSAPublicKey) {
                 
-                if (a_signature_type == null || a_signature_type.getInteger32() != ENUM_DESS_DIGITAL_SIGNATURE_TYPE_RSA4096_with_SHA256) {
+                if (a_signature_type.getInteger32() != ENUM_DESS_DIGITAL_SIGNATURE_TYPE_RSA4096_with_SHA256) {
                     logger.warn("Configured Public Key type mismatch with type received in AVP_DESS_DIGITAL_SIGNATURE_TYPE");
                     return "";
                 }
@@ -449,7 +407,7 @@ public class Crypto implements CryptoInterface {
                 }
             } else if (publicKey instanceof ECPublicKey) {
                 
-                if (a_signature_type == null || a_signature_type.getInteger32() != ENUM_DESS_DIGITAL_SIGNATURE_TYPE_ECDSA_with_SHA256) {
+                if (a_signature_type.getInteger32() != ENUM_DESS_DIGITAL_SIGNATURE_TYPE_ECDSA_with_SHA256) {
                     logger.warn("Configured Public Key type mismatch with type received in AVP_DESS_DIGITAL_SIGNATURE_TYPE");
                     return "";
                 }
