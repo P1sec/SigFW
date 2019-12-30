@@ -35,8 +35,9 @@
 
         <avp name="DESS-DIGITAL-SIGNATURE-TYPE" code="1004" mandatory="mustnot" protected="may" vendor-bit="must" vendor-id="GSMA-DESS" may-encrypt="yes">
                 <type type-name="Enumerated"/>
-                <enum name="RSA4096 with SHA256" code="0"/>
+                <enum name="RSA with SHA256" code="0"/>
                 <enum name="ECDSA with SHA256" code="1"/>
+                <enum name="DSA with SHA256" code="2"/>
         </avp>
 
 	<avp name="DESS-SIGNATURE" code="1000" vendor-id="GSMA-DESS">

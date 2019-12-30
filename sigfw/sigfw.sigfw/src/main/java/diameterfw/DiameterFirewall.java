@@ -111,7 +111,6 @@ import java.security.interfaces.ECPublicKey;
 import com.p1sec.sigfw.SigFW_interface.FirewallRulesInterface;
 import static diameterfw.DTLSOverDatagram.log;
 import static diameterfw.DTLSOverDatagram.printHex;
-import static diameterfw.DiameterFirewallConfig.origin_realm_signing_signing_realm;
 import java.io.FileInputStream;
 import java.net.DatagramPacket;
 import java.net.UnknownHostException;
@@ -238,6 +237,8 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
     //                                            .expiration(60, TimeUnit.SECONDS)
     //                                            .build();
     
+    public static KeyManagerFactory kmf = null;
+    
     private static int DTLS_BUFFER_SIZE = 64*1024;
     private static int DTLS_MAX_HANDSHAKE_LOOPS = 200;
     private static int DTLS_MAXIMUM_PACKET_SIZE = 10*1024;
@@ -251,6 +252,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
     private static String dtls_keyStoreFile = "keystore";
     private static String dtls_trustStoreFile = "truststore";
     private static String dtls_passwd = "keystore";
+    public static String dtls_keyStoreAlias = "keystore";
     private static String dtls_keyFilename =
             System.getProperty("test.src", ".") + "/" + dtls_pathToStores +
                 "/" + dtls_keyStoreFile;
@@ -315,7 +317,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
     // Used to correlate Diameter Answers with Requests, to learn the Dest-Realm for the answer
     // Key: AppID + ":" + "CommandCode" + ":" + Dest_realm + ":" + msg.getEndToEndIdentifier()
     // Value: Origin-Realm from first message detected (Request)
-    private static Map<String, String> diameter_sessions = ExpiringMap.builder()
+    public static Map<String, String> diameter_sessions = ExpiringMap.builder()
                                                 .expiration(10, TimeUnit.SECONDS)
                                                 .build();
     
@@ -326,7 +328,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
 
     static final private String persistDir = "XmlDiameterFirewall";
     
-    // proprietary autodiscovery used for asymetric encryption
+    // proprietary autodiscovery used for asymmetric encryption
     // not according to IANA and GSMA FS.19
     static final private int CC_AUTO_ENCRYPTION = 999;
     static final private int AVP_AUTO_ENCRYPTION_CAPABILITIES = 1101;
@@ -1099,7 +1101,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                 lua_hmap.put("diameter_ai", "");    // application id
                 lua_hmap.put("diameter_imsi", "");
                 lua_hmap.put("diameter_msisdn", "");
-
+               
                 ByteBuffer buf = ByteBuffer.wrap(pd.getData());
 
 
@@ -1115,7 +1117,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
 
                     int cc = msg.getCommandCode();
                     lua_hmap.put("diameter_cc", Integer.toString(cc));
-
+                    
                     String dest_realm = "";
                     Avp avp = msg.getAvps().getAvp(Avp.DESTINATION_REALM);
                     if (avp != null && avp.getDiameterURI() != null && avp.getDiameterURI().getFQDN() != null) {
@@ -1180,7 +1182,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                             && cc != CC_DTLS_HANDSHAKE_CLIENT && cc != CC_DTLS_HANDSHAKE_SERVER) {
                         // ------------- Diameter verify --------------
                         if (DiameterFirewallConfig.origin_realm_verify.containsKey(orig_realm)) {
-                            String r = crypto.diameterVerify(msg, DiameterFirewallConfig.origin_realm_verify_signing_realm);
+                            String r = crypto.diameterVerify(msg, DiameterFirewallConfig.origin_realm_verify_signing_realm, dtls_engine_permanent_server);
                             if (!r.equals("")) {
                                 firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, r, lua_hmap);
                                 return;
@@ -1489,6 +1491,10 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
 
                                 logger.info("============ Encryption Autodiscovery Sending Result ============ ");
 
+                                // --------- Add also Diameter signature ------------
+                                crypto.diameterSign(answer, DiameterFirewallConfig.origin_realm_signing, DiameterFirewallConfig.origin_realm_signing_signing_realm, dtls_engine_permanent_client);
+                                // --------------------------------------------------
+                                
                                 sendDiameterMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), answer, false, lua_hmap);
                                 return;
                             }
@@ -1767,10 +1773,13 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                     if (!orig_realm.equals("") /*&& msg.isRequest()*/) {
                         // --------------------------------------------
                         // ------------- Diameter signing -------------
-                        if (DiameterFirewallConfig.origin_realm_signing.containsKey(orig_realm)) {
+                        
+                        /*if (DiameterFirewallConfig.origin_realm_signing.containsKey(orig_realm)) {
                             KeyPair keyPair = DiameterFirewallConfig.origin_realm_signing.get(orig_realm);
                             crypto.diameterSign(msg, keyPair, origin_realm_signing_signing_realm.get(orig_realm));
-                        }
+                        }*/
+                        crypto.diameterSign(msg, DiameterFirewallConfig.origin_realm_signing, DiameterFirewallConfig.origin_realm_signing_signing_realm, dtls_engine_permanent_client);
+                        
                         // --------------------------------------------
                     }
                     // ------------------------------------------
@@ -1861,8 +1870,9 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                         // ------------ Encryption Autodiscovery initial message ------------ 
                         if (!encryption_autodiscovery_sessions_reverse.containsKey(_dest_realm)) {
 
-                            IMessage message = parser.createEmptyMessage((IMessage)msg, CC_AUTO_ENCRYPTION);
-
+                            //IMessage message = parser.createEmptyMessage((IMessage)msg, CC_AUTO_ENCRYPTION);
+                            IMessage message = parser.createEmptyMessage(CC_AUTO_ENCRYPTION, AI_DESS_INTERFACE);
+                            
                             // Workaround. E2E ID long value should be clamp to 32bit before use. It is clamped in proto encoding. 
                             // See jDiamter MessageParser.java, Line 111. long endToEndId = ((long) in.readInt() << 32) >>> 32;
                             long e2e_id = ((long) message.getEndToEndIdentifier() << 32) >>> 32;
@@ -1877,13 +1887,15 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                             logger.debug("encryption_autodiscovery_sessions_reverse.put " + _dest_realm + " " + message.getEndToEndIdentifier());
                             encryption_autodiscovery_sessions_reverse.put(_dest_realm, message.getEndToEndIdentifier());
 
-                            if(!msg.isRequest()) {
+                            /*if(!msg.isRequest()) {
                                 message.setRequest(true);
                                 // TODO usa raw AVP encoding, because aaa:// is added by jDiameter
                                 message.getAvps().addAvp(Avp.DESTINATION_REALM, _dest_realm, true, false, true);
                             }
-
-                            message.setHeaderApplicationId(AI_DESS_INTERFACE);
+                            message.setHeaderApplicationId(AI_DESS_INTERFACE);*/
+                            
+                            message.setRequest(true);
+                            message.getAvps().addAvp(Avp.DESTINATION_REALM, _dest_realm, true, false, true);
 
                             avp = msg.getAvps().getAvp(Avp.ORIGIN_REALM);
                             if (avp != null) {
@@ -1891,10 +1903,11 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                             }
 
                             // --------- Add also Diameter signature ------------
-                            if (DiameterFirewallConfig.origin_realm_signing.containsKey(orig_realm)) {
+                            /*if (DiameterFirewallConfig.origin_realm_signing.containsKey(orig_realm)) {
                                 KeyPair keyPair = DiameterFirewallConfig.origin_realm_signing.get(orig_realm);
                                 crypto.diameterSign(message, keyPair, DiameterFirewallConfig.origin_realm_signing_signing_realm.get(orig_realm));
-                            }
+                            }*/
+                            crypto.diameterSign(message, DiameterFirewallConfig.origin_realm_signing, DiameterFirewallConfig.origin_realm_signing_signing_realm, dtls_engine_permanent_client);
                             // --------------------------------------------------
 
                             logger.info("============ Sending Autodiscovery Request ============ ");
@@ -2090,7 +2103,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
             ts.load(fis, passphrase);
         }
 
-        KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
+        kmf = KeyManagerFactory.getInstance("SunX509");
         kmf.init(ks, passphrase);
 
         TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");

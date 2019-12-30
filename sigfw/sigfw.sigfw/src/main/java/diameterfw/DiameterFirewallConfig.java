@@ -382,7 +382,9 @@ public class DiameterFirewallConfig {
                     if (origin_realm_verify.containsKey(origin_realm) == false) {
                         origin_realm_verify.put(origin_realm, publicKey);
                     }
-                    origin_realm_verify_signing_realm.put(origin_realm + ":" + signing_realm, publicKey);
+                    if (origin_realm_verify_signing_realm.containsKey(origin_realm + ":" + signing_realm) == false) {
+                        origin_realm_verify_signing_realm.put(origin_realm + ":" + signing_realm, publicKey);
+                    }
                 }
             }
         } catch (InvalidKeySpecException ex) {
