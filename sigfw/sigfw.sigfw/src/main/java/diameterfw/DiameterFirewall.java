@@ -652,7 +652,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
         http.setPort(8080);
         http.setIdleTimeout(30000);*/
 
-        SslContextFactory sslContextFactory = new SslContextFactory();
+        SslContextFactory sslContextFactory = new SslContextFactory.Server();
         sslContextFactory.setIncludeCipherSuites("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256");
         sslContextFactory.setIncludeProtocols("TLSv1.2");
         //sslContextFactory.setKeyStorePath(keystoreFile.getAbsolutePath());
