@@ -4,6 +4,7 @@ Open Source SS7/Diameter firewall
 ## SigFW introduction
 * [SigFW BlackHat USA 2017 Presentation](https://github.com/P1sec/SigFW/blob/master/docs/us-17-Kacer-SS7-Attacker-Heaven-Turns-Into-Riot-How-To-Make-Nation-State-And-Intelligence-Attackers-Lives-Much-Harder-On-Mobile-Networks.pdf)
 * [SigFW BlackHat USA 2017 Whitepaper](https://github.com/P1sec/SigFW/blob/master/docs/us-17-Kacer-SS7-Attacker-Heaven-Turns-Into-Riot-How-To-Make-Nation-State-And-Intelligence-Attackers-Lives-Much-Harder-On-Mobile-Networks-wp.pdf)
+* [SigFW BlackHat USA 2017 Talk (youtube)](https://www.youtube.com/watch?v=XiKq2fJBUJI)
 
 ## Build instructions
 For more detailed installation and build instructions refer to this [page](https://github.com/P1sec/SigFW/wiki/Installation-and-Build-Instructions).
@@ -79,7 +80,7 @@ For the list of contributors, see the AUTHORS file.
 
 Original work was created by Martin Kacer, Philippe Langlois
 
-Copyright 2019, P1 Security S.A.S and individual contributors
+Copyright 2020, P1 Security S.A.S and individual contributors
 
 We would like to thanks for everyone supporting this project.
 
