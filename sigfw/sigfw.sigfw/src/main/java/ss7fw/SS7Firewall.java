@@ -1902,16 +1902,17 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
         http.setPort(8080);
         http.setIdleTimeout(30000);*/
 
-        SslContextFactory sslContextFactory = new SslContextFactory();
+        SslContextFactory.Server sslContextFactory = new SslContextFactory.Server();
         sslContextFactory.setIncludeCipherSuites("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256");
         sslContextFactory.setIncludeProtocols("TLSv1.2");
         sslContextFactory.setKeyStorePath("ss7fw_keystore");
         sslContextFactory.setKeyStorePassword("BkgcNSrVn4wQWNpEowoHeHxgZeSn5WV7");
         sslContextFactory.setKeyManagerPassword("BkgcNSrVn4wQWNpEowoHeHxgZeSn5WV7");
-        
+        sslContextFactory.setSniRequired(false);
+
         
         HttpConfiguration https_config = new HttpConfiguration(http_config);
-        SecureRequestCustomizer src = new SecureRequestCustomizer();
+        SecureRequestCustomizer src = new SecureRequestCustomizer(false);
         src.setStsMaxAge(2000);
         src.setStsIncludeSubDomains(true);
         https_config.addCustomizer(src);
