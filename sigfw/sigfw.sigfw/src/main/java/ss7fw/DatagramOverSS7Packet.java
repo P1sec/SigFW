@@ -21,33 +21,34 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  */
-package diameterfw;
+package ss7fw;
 
+import diameterfw.*;
 import java.net.DatagramPacket;
 
 /**
  *
  * @author Martin Kacer
  */
-public class DatagramOverDiameterPacket {
-    private String peer_realm;
+public class DatagramOverSS7Packet {
+    private String peer_gt;
     private DatagramPacket p;
 
-    public DatagramOverDiameterPacket(String peer_realm, DatagramPacket p) {
-        this.peer_realm = peer_realm;
+    public DatagramOverSS7Packet(String peer_gt, DatagramPacket p) {
+        this.peer_gt = peer_gt;
         this.p = p;
     }
 
-    public String getPeer_realm() {
-        return peer_realm;
+    public String getPeer_gt() {
+        return peer_gt;
     }
 
     public DatagramPacket getP() {
         return p;
     }
 
-    public void setPeer_realm(String peer_realm) {
-        this.peer_realm = peer_realm;
+    public void setPeer_gt(String peer_gt) {
+        this.peer_gt = peer_gt;
     }
 
     public void setP(DatagramPacket p) {

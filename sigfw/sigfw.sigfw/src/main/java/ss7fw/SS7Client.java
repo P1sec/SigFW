@@ -268,7 +268,7 @@ public class SS7Client extends AbstractSctpBase implements ManagementEventListen
         //SccpAddress calledParty = this.sccpStack.getSccpProvider().getParameterFactory().createSccpAddress(RoutingIndicator.ROUTING_BASED_ON_GLOBAL_TITLE, null, 2, SSN);
         
         GlobalTitle callingGT = this.sccpProvider.getParameterFactory().createGlobalTitle("111111111111", 0, org.mobicents.protocols.ss7.indicator.NumberingPlan.ISDN_TELEPHONY, null, NatureOfAddress.INTERNATIONAL);
-        GlobalTitle calledGT = this.sccpProvider.getParameterFactory().createGlobalTitle("222222222222", 0, org.mobicents.protocols.ss7.indicator.NumberingPlan.ISDN_TELEPHONY, null, NatureOfAddress.INTERNATIONAL);
+        GlobalTitle calledGT = this.sccpProvider.getParameterFactory().createGlobalTitle("000000000000", 0, org.mobicents.protocols.ss7.indicator.NumberingPlan.ISDN_TELEPHONY, null, NatureOfAddress.INTERNATIONAL);
         
         SccpAddress callingParty = this.sccpStack.getSccpProvider().getParameterFactory().createSccpAddress(RoutingIndicator.ROUTING_BASED_ON_GLOBAL_TITLE, callingGT, CLIENT_SPC, 8);
         SccpAddress calledParty = this.sccpStack.getSccpProvider().getParameterFactory().createSccpAddress(RoutingIndicator.ROUTING_BASED_ON_GLOBAL_TITLE, calledGT, SERVER_SPC, 8);
@@ -539,6 +539,15 @@ public class SS7Client extends AbstractSctpBase implements ManagementEventListen
             sccpDataMessage = client.sccpProvider.getMessageFactory().createDataMessageClass0(calledParty, callingParty, hexStringToByteArray("6516480433119839490402035ea26c08a106020102020138"), 0, true, null, null);
             client.sccpProvider.send(sccpDataMessage);
             
+            
+            Thread.sleep(1000);
+            client.initiateUSSD();
+            
+            Thread.sleep(1000);
+            client.initiateUSSD();
+            
+            Thread.sleep(1000);
+            client.initiateUSSD();
             
             Thread.sleep(1000);
             client.initiateUSSD();

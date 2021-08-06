@@ -58,6 +58,7 @@ import java.util.logging.Level;
 //import javafx.util.Pair;
 import java.util.AbstractMap;
 import java.util.Date;
+import java.util.Random;
 import java.util.SortedMap;
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
@@ -72,13 +73,18 @@ import org.jdiameter.api.Avp;
 import org.jdiameter.api.AvpDataException;
 import org.jdiameter.api.AvpSet;
 import org.jdiameter.api.Message;
+import org.mobicents.protocols.asn.AsnInputStream;
 import org.mobicents.protocols.asn.AsnOutputStream;
 import org.mobicents.protocols.asn.Tag;
 import org.mobicents.protocols.ss7.sccp.LongMessageRuleType;
 import org.mobicents.protocols.ss7.sccp.impl.message.MessageFactoryImpl;
 import org.mobicents.protocols.ss7.sccp.message.SccpDataMessage;
+import org.mobicents.protocols.ss7.tcap.asn.ApplicationContextNameImpl;
+import org.mobicents.protocols.ss7.tcap.asn.DialogPortion;
+import org.mobicents.protocols.ss7.tcap.asn.DialogRequestAPDUImpl;
 import org.mobicents.protocols.ss7.tcap.asn.EncodeException;
 import org.mobicents.protocols.ss7.tcap.asn.InvokeImpl;
+import org.mobicents.protocols.ss7.tcap.asn.OperationCodeImpl;
 import org.mobicents.protocols.ss7.tcap.asn.TcapFactory;
 import org.mobicents.protocols.ss7.tcap.asn.comp.Component;
 import org.mobicents.protocols.ss7.tcap.asn.comp.ComponentType;
@@ -120,7 +126,8 @@ public class Crypto implements CryptoInterface {
     static final public int ENUM_DESS_DIGITAL_SIGNATURE_TYPE_ECDSA_with_SHA256 = 1;
     static final public int ENUM_DESS_DIGITAL_SIGNATURE_TYPE_DSA_with_SHA256 = 2;
     
-    static final private Long OC_SIGNATURE = 100L;
+    static final public Long OC_SIGNATURE = 100L;
+    static final public Long OC_ASYNC_ENCRYPTION = 95L;
     
     // Diameter signature and decryption time window used for TVP
     public final static long diameter_tvp_time_window = 30;  // in seconds
@@ -129,11 +136,15 @@ public class Crypto implements CryptoInterface {
     private final static long tcap_tvp_time_window = 30;  // in seconds
     
     protected static final Logger logger = Logger.getLogger(Crypto.class);
+    
+    static Random randomGenerator = new Random();
+    
     static {
         configLog4j();
     }
     
     public Crypto() {
+        
         /*
         // Encryption RSA
         try {
@@ -1049,6 +1060,8 @@ public class Crypto implements CryptoInterface {
     @Override
     public int tcapVerify(SccpDataMessage message, TCBeginMessage tcb, Component[] comps, PublicKey publicKey) {
         
+        logger.debug("tcapVerify for SCCP Called GT = " + message.getCalledPartyAddress().getGlobalTitle().getDigits());
+        
         Signature signatureRSA = null;
         Signature signatureECDSA = null;
         
@@ -1419,16 +1432,76 @@ public class Crypto implements CryptoInterface {
                 }
 
                 cipherText = concatByteArray(SPI, cipherText);
+                
+                
+                TCBeginMessage tc = TcapFactory.createTCBeginMessage();
 
-                SccpDataMessage m = sccpMessageFactory.createDataMessageClass0(message.getCalledPartyAddress(), message.getCallingPartyAddress(), cipherText, message.getOriginLocalSsn(), false, null, null);
+                byte[] otid = { (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256) };
+
+                tc.setOriginatingTransactionId(otid);
+                // Create Dialog Portion
+                DialogPortion dp = TcapFactory.createDialogPortion();
+
+                dp.setOid(true);
+                dp.setOidValue(new long[] { 0, 0, 17, 773, 1, 1, 1 });
+
+                dp.setAsn(true);
+
+                DialogRequestAPDUImpl diRequestAPDUImpl = new DialogRequestAPDUImpl();
+
+                // TODO change Application Context
+                ApplicationContextNameImpl acn = new ApplicationContextNameImpl();
+                acn.setOid(new long[] { 0, 4, 0, 0, 1, 0, 19, 2 });
+
+                diRequestAPDUImpl.setApplicationContextName(acn);
+                diRequestAPDUImpl.setDoNotSendProtocolVersion(true);
+
+                dp.setDialogAPDU(diRequestAPDUImpl);
+
+                tc.setDialogPortion(dp);
+
+                Component[] c = new Component[1];
+
+                c[0] = new InvokeImpl();
+                ((InvokeImpl)c[0]).setInvokeId(1l);
+                OperationCode oc = TcapFactory.createOperationCode();
+                oc.setLocalOperationCode(OC_ASYNC_ENCRYPTION);
+                ((InvokeImpl)c[0]).setOperationCode(oc);
+
+                // DATA
+                Parameter p1 = TcapFactory.createParameter();
+                p1.setTagClass(Tag.CLASS_PRIVATE);
+                p1.setPrimitive(true);
+                p1.setTag(Tag.STRING_OCTET);
+                p1.setData(cipherText);
+
+                // Encrypted data
+                Parameter _p = TcapFactory.createParameter();
+                _p.setTagClass(Tag.CLASS_UNIVERSAL);
+                _p.setTag(0x04);
+                _p.setParameters(new Parameter[] { p1 });
+                ((InvokeImpl)c[0]).setParameter(_p);
+        
+                tc.setComponent(c);
+                AsnOutputStream aos = new AsnOutputStream();
+                try {
+                    tc.encode(aos);
+                } catch (EncodeException ex) {
+                    java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                }
+
+                byte[] _d = aos.toByteArray();
+                
+
+                SccpDataMessage m = sccpMessageFactory.createDataMessageClass0(message.getCalledPartyAddress(), message.getCallingPartyAddress(), _d, message.getOriginLocalSsn(), false, null, null);
                 message = m;
                 l = LongMessageRuleType.XUDT_ENABLED;
             } else if (publicKey instanceof ECPublicKey) {
                 logger.warn("EC algorithm not implemented");
-                return new AbstractMap.SimpleEntry<>(message, lmrt);
+                return new AbstractMap.SimpleEntry<>(message, l);
             } else {
                 logger.warn("Unknown Public Key algorithm");
-                return new AbstractMap.SimpleEntry<>(message, lmrt);
+                return new AbstractMap.SimpleEntry<>(message, l);
             }
         } catch (InvalidKeyException ex) {
             java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
@@ -1437,7 +1510,7 @@ public class Crypto implements CryptoInterface {
         } catch (BadPaddingException ex) {
             java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
         }
-        return new AbstractMap.SimpleEntry<>(message, lmrt);
+        return new AbstractMap.SimpleEntry<>(message, l);
     }
     
     
@@ -1446,11 +1519,12 @@ public class Crypto implements CryptoInterface {
      * 
      * 
      * @param message SCCP message
+     * @param comps TCAP components
      * @param sccpMessageFactory SCCP message factory
      * @param keyPair Key Pair
      * @return AbstractMap.SimpleEntry<message, result> - message and result indicator
      */    
-    public AbstractMap.SimpleEntry<SccpDataMessage, String> tcapDecrypt(SccpDataMessage message, MessageFactoryImpl sccpMessageFactory, KeyPair keyPair) {
+    public AbstractMap.SimpleEntry<SccpDataMessage, String> tcapDecrypt(SccpDataMessage message, Component[] comps, MessageFactoryImpl sccpMessageFactory, KeyPair keyPair) {
         logger.debug("TCAP Decryption for SCCP Called GT = " + message.getCalledPartyAddress().getGlobalTitle().getDigits());
 
         // Encryption RSA
@@ -1479,73 +1553,115 @@ public class Crypto implements CryptoInterface {
         }
         
         try {
-            // Sending XUDT message from UDT message
-
-            // SPI(version) and TVP(timestamp)
-            byte[] SPI = {0x00, 0x00, 0x00, 0x00};
-            byte[] TVP = {0x00, 0x00, 0x00, 0x00};
-
-            byte[] data = null;
-            if (message.getData().length >= SPI.length) {
-                SPI = Arrays.copyOfRange(message.getData(), 0, SPI.length);
-                data = Arrays.copyOfRange(message.getData(), SPI.length, message.getData().length);
-            } else {
-                data = message.getData();
+            byte[] data = message.getData();
+            
+            AsnInputStream ais = new AsnInputStream(data);
+            
+            // this should have TC message tag
+            int tag;
+            try {
+                tag = ais.readTag();
+            } catch (IOException ex) {
+                java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                logger.warn("Unknown TCAP tag detected in tcapDecrypt");
+                return new AbstractMap.SimpleEntry<>(message, "Unknown TCAP tag detected");
             }
-
-            PrivateKey privateKey = keyPair.getPrivate();
             
-            if (privateKey instanceof RSAPrivateKey) {
-            
-                cipherRSA.init(Cipher.DECRYPT_MODE, privateKey);
-
-                RSAPublicKey rsaPublicKey = (RSAPublicKey) keyPair.getPublic();
-                int keyLength = rsaPublicKey.getModulus().bitLength() / 8;
-
-                // TODO verify SPI
-                byte[][] datas = splitByteArray(data, keyLength/* - 11*/);
-                byte[] decryptedText = null;
-                for (byte[] b : datas) {
-
-                    byte[] d = cipherRSA.doFinal(b);
-                    // ------- Verify TVP --------
-                    long t = System.currentTimeMillis() / 100;    // in 0.1s
-                    TVP[0] = (byte) ((t >> 24) & 0xFF);
-                    TVP[1] = (byte) ((t >> 16) & 0xFF);
-                    TVP[2] = (byte) ((t >> 8) & 0xFF);
-                    TVP[3] = (byte) ((t >> 0) & 0xFF);
-                    t = 0;
-                    for (int i = 0; i < TVP.length; i++) {
-                        t = ((t << 8) + (TVP[i] & 0xff));
-                    }
-
-                    TVP[0] = d[0];
-                    TVP[1] = d[1];
-                    TVP[2] = d[2];
-                    TVP[3] = d[3];
-                    long t_tvp = 0;
-                    for (int i = 0; i < TVP.length; i++) {
-                        t_tvp = ((t_tvp << 8) + (TVP[i] & 0xff));
-                    }
-                    if (Math.abs(t_tvp - t) > tcap_tvp_time_window * 10) {
-                        return new AbstractMap.SimpleEntry<>(message, "SS7 FW: Blocked in decryption, Wrong timestamp in TVP (received: " + t_tvp + ", current: " + t + ")");
-                    }
-                    d = Arrays.copyOfRange(d, TVP.length, d.length);
-                    // ---- End of Verify TVP ----
-
-                    decryptedText = concatByteArray(decryptedText, d);
-                    
-                    SccpDataMessage m = sccpMessageFactory.createDataMessageClass0(message.getCalledPartyAddress(), message.getCallingPartyAddress(), decryptedText, message.getOriginLocalSsn(), false, null, null);
-                    message = m;
+            for (Component comp : comps) {
+                if (comp == null) {
+                    continue;
                 }
-            }  else if (privateKey instanceof ECPrivateKey) {
-                logger.warn("EC algorithm not implemented");
-                return new AbstractMap.SimpleEntry<>(message, ""); 
-            } else {
-                logger.warn("Unknown Private Key algorithm");
-                return new AbstractMap.SimpleEntry<>(message, ""); 
-            }
 
+                byte[] message_data = null;
+                OperationCodeImpl oc;
+
+                switch (comp.getType()) {
+                case Invoke:
+                    Invoke inv = (Invoke) comp;
+                       
+                    Parameter p = inv.getParameter();
+                    Parameter[] params = p.getParameters();
+                    
+                    if (params != null && params.length >= 1) {
+
+                        // Encrypted data
+                        Parameter p1 = params[0];
+                        message_data = p1.getData();
+                    }
+
+
+                    // Sending XUDT message from UDT message
+
+                    // SPI(version) and TVP(timestamp)
+                    byte[] SPI = {0x00, 0x00, 0x00, 0x00};
+                    byte[] TVP = {0x00, 0x00, 0x00, 0x00};
+
+                    if (message_data.length >= SPI.length) {
+                        SPI = Arrays.copyOfRange(message_data, 0, SPI.length);
+                        data = Arrays.copyOfRange(message_data, SPI.length, message_data.length);
+                    } else {
+                        data = message_data;
+                    }
+
+                    PrivateKey privateKey = keyPair.getPrivate();
+
+                    if (privateKey instanceof RSAPrivateKey) {
+
+                        cipherRSA.init(Cipher.DECRYPT_MODE, privateKey);
+
+                        RSAPublicKey rsaPublicKey = (RSAPublicKey) keyPair.getPublic();
+                        int keyLength = rsaPublicKey.getModulus().bitLength() / 8;
+
+                        // TODO verify SPI
+                        byte[][] datas = splitByteArray(data, keyLength/* - 11*/);
+                        byte[] decryptedText = null;
+                        for (byte[] b : datas) {
+
+                            byte[] d = cipherRSA.doFinal(b);
+                            // ------- Verify TVP --------
+                            long t = System.currentTimeMillis() / 100;    // in 0.1s
+                            TVP[0] = (byte) ((t >> 24) & 0xFF);
+                            TVP[1] = (byte) ((t >> 16) & 0xFF);
+                            TVP[2] = (byte) ((t >> 8) & 0xFF);
+                            TVP[3] = (byte) ((t >> 0) & 0xFF);
+                            t = 0;
+                            for (int i = 0; i < TVP.length; i++) {
+                                t = ((t << 8) + (TVP[i] & 0xff));
+                            }
+
+                            TVP[0] = d[0];
+                            TVP[1] = d[1];
+                            TVP[2] = d[2];
+                            TVP[3] = d[3];
+                            long t_tvp = 0;
+                            for (int i = 0; i < TVP.length; i++) {
+                                t_tvp = ((t_tvp << 8) + (TVP[i] & 0xff));
+                            }
+                            if (Math.abs(t_tvp - t) > tcap_tvp_time_window * 10) {
+                                return new AbstractMap.SimpleEntry<>(message, "SS7 FW: Blocked in decryption, Wrong timestamp in TVP (received: " + t_tvp + ", current: " + t + ")");
+                            }
+                            d = Arrays.copyOfRange(d, TVP.length, d.length);
+                            // ---- End of Verify TVP ----
+
+                            decryptedText = concatByteArray(decryptedText, d);
+
+                            SccpDataMessage m = sccpMessageFactory.createDataMessageClass0(message.getCalledPartyAddress(), message.getCallingPartyAddress(), decryptedText, message.getOriginLocalSsn(), false, null, null);
+                            message = m;
+                        }
+                    }  else if (privateKey instanceof ECPrivateKey) {
+                        logger.warn("EC algorithm not implemented");
+                        return new AbstractMap.SimpleEntry<>(message, "");
+                    } else {
+                        logger.warn("Unknown Private Key algorithm");
+                        return new AbstractMap.SimpleEntry<>(message, "");
+                    }
+
+                
+                
+                break;
+                }
+            }
+            
         } catch (InvalidKeyException ex) {
             logger.info("TCAP FW: TCAP decryption failed for SCCP Called GT: " + message.getCalledPartyAddress().getGlobalTitle().getDigits() + " InvalidKeyException: " + ex.getMessage());
             //java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
@@ -1556,6 +1672,6 @@ public class Crypto implements CryptoInterface {
             logger.info("TCAP FW: TCAP decryption failed for SCCP Called GT: " + message.getCalledPartyAddress().getGlobalTitle().getDigits() + " BadPaddingException: " + ex.getMessage());
             //java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
         }
-        return new AbstractMap.SimpleEntry<>(message, "");         
+        return new AbstractMap.SimpleEntry<>(message, "");
     }
 }

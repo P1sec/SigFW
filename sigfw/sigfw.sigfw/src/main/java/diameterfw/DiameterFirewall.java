@@ -109,8 +109,6 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.security.interfaces.ECPublicKey;
 import com.p1sec.sigfw.SigFW_interface.FirewallRulesInterface;
-import static diameterfw.DTLSOverDatagram.log;
-import static diameterfw.DTLSOverDatagram.printHex;
 import java.io.FileInputStream;
 import java.net.DatagramPacket;
 import java.net.UnknownHostException;
@@ -313,7 +311,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
     
     
     // Diameter sessions
-    // TODO consider additng Diameter Host into Key
+    // TODO consider adding Diameter Host into Key
     // Used to correlate Diameter Answers with Requests, to learn the Dest-Realm for the answer
     // Key: AppID + ":" + "CommandCode" + ":" + Dest_realm + ":" + msg.getEndToEndIdentifier()
     // Value: Origin-Realm from first message detected (Request)
@@ -1215,13 +1213,16 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                                 needDTLSHandshake = true;
                                 
                                 needDTLSHandshakeReason = "needDTLSHandshake indicated, because failed to decrypt Request message from realm: " + orig_realm;
+                                
+                                firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, "Failed to decrypt Request message from realm: " + orig_realm, lua_hmap);
+                                return;
                             }
                             if (!dtls_engine_expiring_server.containsKey(orig_realm)) {
                                 needDTLSHandshake = true;
                                 
                                 needDTLSHandshakeReason = "needDTLSHandshake indicated, because session has expired for realm: " + orig_realm;
                             }
-                        } 
+                        }
                         // No DTLS engine, but recieved DTLS encrypted data
                         else if (msg.getAvps().getAvp(AVP_DESS_ENCRYPTED, VENDOR_ID) != null) {
                             needDTLSHandshakeReason = "needDTLSHandshake indicated, because no DTLS engine, but recieved Request with DTLS encrypted data from realm: " + orig_realm;
@@ -1238,7 +1239,7 @@ public class DiameterFirewall implements ManagementEventListener, ServerListener
                                 firewallMessage(asctn, pd.getPayloadProtocolId(), pd.getStreamNumber(), msg, r, lua_hmap);
                                 return;
                             }
-                        }                     
+                        }
                     }
                     // Answers without Dest-Realm, but seen previously Request
                     else if (!msg.isRequest()) {

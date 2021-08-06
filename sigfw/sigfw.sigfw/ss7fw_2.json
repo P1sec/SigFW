@@ -4,6 +4,10 @@
 		"Home_GT_prefixes": [
 			"0"
 		],
+		"FW_GT_comment": "# FW GT used as calling GT to initiate messages (e.g. in DTLS handshake)",
+		"FW_GT": [
+			"000000000010"
+		],
 		"Home_IMSI_prefixes_comment": "# Identification Home IMSI range for HPLMN network, used to identify home subscribers",
 		"Home_IMSI_prefixes": [
 			"111111"
@@ -150,6 +154,7 @@
 		},
 		"encryption_rules": {
 			"called_gt_encryption": [
+			
 			],
 			"called_gt_decryption": [
 				{
@@ -160,17 +165,23 @@
 					"private_key": "MIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBAKb88Cxc6PtyOKsmxCyIh4dq4U0vAEi4zVuuRSbdpVd6toMh4nYFZeZaUoyZf8VFmHhCF72ZTLpiDBM7w+d1Z0wNFYzDy+9ckUjsc8mmw19wHKR59KqGvlfiHofJCvvdXw7RTk+2AIG5WjK44UiPztYXBou5qMeJCCmzs06Wh4fXAgMBAAECgYBwNrkOlsDZd8AtAzgA1R5+GYydWWBPfiBB47IElB1v076iEDsmJCp9yWR/pwb9ge8boQ5jEolFFm4W3qqe934ZvBkJaL38zqI3rjZJJ7c9uJwr3ldmREFZa5U8l9tnvlck1b9QW0KDvjt+1Q547+eFlgQaqY5QfY+9D3rpdkZYwQJBAO/2PyNrYlHmVGZOt6foJLv3w4uMkTuleVH9Qu9TOQiv5wyCPTmMDMzW3AwPlFNaZI6YqqYYPUpyI1T0vWVpfS0CQQCyJhtwb5Xxg+b9NGuGmMqJ9GVzYwDPufhMDp7CDDaRKwV3q7eOtsasEGZX64ZkuVRL9xssKLunoqiT5c9z5aOTAkEApf060692hZzEiTiuhjFpJ7VNyPxlglMGxxZf9NkmvMGhG+ADpgkg2ZlPAfDM85O1t4YXlWlzDEpD8oKReNMtyQJAQZN9bjnk++4NzQ7KtdTwWS+5WGwNFGnkWDrZfZx5SZ6IeLCg9Mua/iNbSOnNoq4FtaDUQ8EKsn5Rh3+EiajyOQJAB/dZABQVKyvDAN4s3rXWsrGSuMzGoNCBf1Min1cnWhW2ndE7XC9szNsDGn7sCXmpjwdb7SA6iuh7yrH0YAiOgQ=="
 				}
 			],
-			"autodiscovery": "true"
+			"autodiscovery_comment": "# When enabled the Firewall will try to retrieve public key for unknown destinations by sending MAP Invoke with OpCode 99.",
+			"autodiscovery": "true",
+			"dtls_encryption_comment": "# If dtls_encryption is enabled, than the autodiscovery is not used anymore. DTLS handshake in SS7 protocol is used instead. For DTLS handshake the trustore and keystore is used. After successful handshake the DTLS encryption is used. Signature_rules, can be still used together with DTLS, however DTLS provides also integrity protection so they are not mandatory.",
+			"dtls_encryption": "true"
 		},
 		"signature_rules": {
 			"calling_gt_verify": [
-				{
-					"calling_gt": "1*",
-					"public_key_type": "RSA",
-					"public_key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCm/PAsXOj7cjirJsQsiIeHauFNLwBIuM1brkUm3aVXeraDIeJ2BWXmWlKMmX/FRZh4Qhe9mUy6YgwTO8PndWdMDRWMw8vvXJFI7HPJpsNfcBykefSqhr5X4h6HyQr73V8O0U5PtgCBuVoyuOFIj87WFwaLuajHiQgps7NOloeH1wIDAQAB"
-				}
+		
 			],
 			"calling_gt_signing": [
+				{
+					"calling_gt": "0*",
+					"public_key_type": "RSA",
+					"public_key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCm/PAsXOj7cjirJsQsiIeHauFNLwBIuM1brkUm3aVXeraDIeJ2BWXmWlKMmX/FRZh4Qhe9mUy6YgwTO8PndWdMDRWMw8vvXJFI7HPJpsNfcBykefSqhr5X4h6HyQr73V8O0U5PtgCBuVoyuOFIj87WFwaLuajHiQgps7NOloeH1wIDAQAB",
+					"private_key_type": "RSA",
+					"private_key": "MIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBAKb88Cxc6PtyOKsmxCyIh4dq4U0vAEi4zVuuRSbdpVd6toMh4nYFZeZaUoyZf8VFmHhCF72ZTLpiDBM7w+d1Z0wNFYzDy+9ckUjsc8mmw19wHKR59KqGvlfiHofJCvvdXw7RTk+2AIG5WjK44UiPztYXBou5qMeJCCmzs06Wh4fXAgMBAAECgYBwNrkOlsDZd8AtAzgA1R5+GYydWWBPfiBB47IElB1v076iEDsmJCp9yWR/pwb9ge8boQ5jEolFFm4W3qqe934ZvBkJaL38zqI3rjZJJ7c9uJwr3ldmREFZa5U8l9tnvlck1b9QW0KDvjt+1Q547+eFlgQaqY5QfY+9D3rpdkZYwQJBAO/2PyNrYlHmVGZOt6foJLv3w4uMkTuleVH9Qu9TOQiv5wyCPTmMDMzW3AwPlFNaZI6YqqYYPUpyI1T0vWVpfS0CQQCyJhtwb5Xxg+b9NGuGmMqJ9GVzYwDPufhMDp7CDDaRKwV3q7eOtsasEGZX64ZkuVRL9xssKLunoqiT5c9z5aOTAkEApf060692hZzEiTiuhjFpJ7VNyPxlglMGxxZf9NkmvMGhG+ADpgkg2ZlPAfDM85O1t4YXlWlzDEpD8oKReNMtyQJAQZN9bjnk++4NzQ7KtdTwWS+5WGwNFGnkWDrZfZx5SZ6IeLCg9Mua/iNbSOnNoq4FtaDUQ8EKsn5Rh3+EiajyOQJAB/dZABQVKyvDAN4s3rXWsrGSuMzGoNCBf1Min1cnWhW2ndE7XC9szNsDGn7sCXmpjwdb7SA6iuh7yrH0YAiOgQ=="
+				}
 			]
 		}
 	}
