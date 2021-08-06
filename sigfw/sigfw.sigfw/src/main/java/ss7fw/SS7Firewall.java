@@ -287,7 +287,27 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 //import javafx.util.Pair;
 import com.sun.tools.javac.util.Pair;
+import java.io.FileInputStream;
+import java.net.DatagramPacket;
+import java.nio.ByteBuffer;
+import java.security.KeyStore;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
+import ss7fw.DatagramOverSS7Packet;
 import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
+import javax.net.ssl.SSLEngineResult;
+import javax.net.ssl.SSLParameters;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 import org.mobicents.protocols.sctp.netty.NettySctpManagementImpl;
 import sigfw.common.Crypto;
 /**
@@ -365,10 +385,102 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
     private static Map<String, Long> encryption_autodiscovery_sessions = ExpiringMap.builder()
                                                 .expiration(60, TimeUnit.SECONDS)
                                                 .build();
+    // Encryption Autodiscovery Reverse
+    // Value: Dest_Realm
+    // Key: E2E ID
+    private static Map<String, Long> encryption_autodiscovery_sessions_reverse = ExpiringMap.builder()
+                                                .expiration(60, TimeUnit.SECONDS)
+                                                .build();
     
+    // DTLS Session
+    // Key: E2E ID
+    // Value: Dest_Realm
+    //private static Map<Long, String> dtls_sessions = ExpiringMap.builder()
+    //                                            .expiration(60, TimeUnit.SECONDS)
+    //                                            .build();
+    
+    public static KeyManagerFactory kmf = null;
+    
+    private static int DTLS_BUFFER_SIZE = 64*1024;
+    private static int DTLS_MAX_HANDSHAKE_LOOPS = 200;
+    private static int DTLS_MAXIMUM_PACKET_SIZE = 10*1024;
+    private static int DTLS_SOCKET_TIMEOUT = 5 * 1000; // in millis
+    private static int DTLS_SOCKET_THREAD_SLEEP = 100; // in millis
+    private static int DTLS_MAX_SESSION_DURATION = 60*60; // in seconds, after the new handshake is required
+    private static int DTLS_MAX_HANDSHAKE_DURATION = 10; // in seconds, after the handshake SSL engine is dropped. Has to be shorter than half of DTLS_MAX_SESSION_DURATION
+    //private static Exception dtls_clientException = null;
+    //private static Exception dtls_serverException = null;
+    private static String dtls_pathToStores = "./";
+    private static String dtls_keyStoreFile = "keystore";
+    private static String dtls_trustStoreFile = "truststore";
+    private static String dtls_passwd = "keystore";
+    public static String dtls_keyStoreAlias = "keystore";
+    private static String dtls_keyFilename =
+            System.getProperty("test.src", ".") + "/" + dtls_pathToStores +
+                "/" + dtls_keyStoreFile;
+    private static String dtls_trustFilename =
+            System.getProperty("test.src", ".") + "/" + dtls_pathToStores +
+                "/" + dtls_trustStoreFile;
+    
+    // protectedAVPs codes used for DTLS encryption
+    List<Integer> protectedAVPCodes = new ArrayList<Integer>(Arrays.asList(
+            1,  // User-Name AVP
+            1600  // MME-Location-Information
+    ));
+
+            
+    
+    // SSL engines stored for peers used by DTLS
+    // this expiring, used to trigger new handshakes after they expire
+    private static Map<String, SSLEngine> dtls_engine_expiring_server = ExpiringMap.builder()
+                                                .expiration(DTLS_MAX_SESSION_DURATION, TimeUnit.SECONDS)
+                                                .build(); // <peer_realm, SSLEngine> 
+    private static Map<String, SSLEngine> dtls_engine_expiring_client = ExpiringMap.builder()
+                                                .expiration(DTLS_MAX_SESSION_DURATION, TimeUnit.SECONDS)
+                                                .build(); // <peer_realm, SSLEngine> 
+    // SSL engines stored for peers used by DTLS
+    // this is permanent, used for actual encryption
+    // 2 DTLS sessions, in and out. Server side is used for decrypt, client side for encrypt.
+    private static Map<String, SSLEngine> dtls_engine_permanent_server = new ConcurrentHashMap<>(); // <peer_realm, SSLEngine>
+    private static Map<String, SSLEngine> dtls_engine_permanent_client = new ConcurrentHashMap<>(); // <peer_realm, SSLEngine>
+    // DTLS SSL engines being handshaked
+    private static Map<String, SSLEngine> dtls_engine_handshaking_server = ExpiringMap.builder()
+                                                .expiration(DTLS_MAX_HANDSHAKE_DURATION, TimeUnit.SECONDS)
+                                                .build(); // <peer_realm, SSLEngine>
+    // DTLS SSL engines being handshaked
+    private static Map<String, SSLEngine> dtls_engine_handshaking_client = ExpiringMap.builder()
+                                                .expiration(DTLS_MAX_HANDSHAKE_DURATION, TimeUnit.SECONDS)
+                                                .build(); // <peer_realm, SSLEngine> 
+    // DTLS handshake thread running indicator
+    //private static Map<String, Thread> dtls_handshake_treads = ExpiringMap.builder()
+    //                                            .expiration(DTLS_MAX_HANDSHAKE_DURATION, TimeUnit.SECONDS)
+    //                                            .build(); // <peer_realm, Thread> 
+    
+    // DTLS client initialization timer, do not initiate new DTLS handshake till this timer
+    // Value: Dest_Realm
+    // Key: E2E ID
+    private static Map<String, Long> dtls_handshake_timer = ExpiringMap.builder()
+                                                .expiration(DTLS_MAX_HANDSHAKE_DURATION*2, TimeUnit.SECONDS)
+                                                .build();
+    
+    
+    private static Map<String, ConcurrentLinkedQueue<DatagramOverSS7Packet>> datagramOverSS7Socket_inbound_server = ExpiringMap.builder()
+                                                .expiration(DTLS_MAX_HANDSHAKE_DURATION, TimeUnit.SECONDS)
+                                                .build(); // <peer_realm, SSLEngine> //new ConcurrentHashMap<>(); //new ConcurrentLinkedQueue<>();
+    private static Map<String, ConcurrentLinkedQueue<DatagramOverSS7Packet>> datagramOverSS7Socket_inbound_client = ExpiringMap.builder()
+                                                .expiration(DTLS_MAX_HANDSHAKE_DURATION, TimeUnit.SECONDS)
+                                                .build(); // <peer_realm, SSLEngine> //new ConcurrentHashMap<>(); //new ConcurrentLinkedQueue<>();
+    //private static ConcurrentLinkedQueue<DatagramOverSS7Packet> datagramOverSS7Socket_outbound = new ConcurrentLinkedQueue<>();
+    
+    
+    
+
     static Random randomGenerator = new Random();
     
     static final private Long OC_AUTO_ENCRYPTION = 99L;
+    static final private Long OC_DTLS_HANDSHAKE_CLIENT = 97L;
+    static final private Long OC_DTLS_HANDSHAKE_SERVER = 98L;
+    static final private Long OC_DTLS_DATA = 96L;
     
     /**
      * Reset Unit Testing Flags
@@ -1068,23 +1180,6 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
                 }
 
 
-                // ------------ TCAP decryption -------------
-                if (message.getType() == SccpDataMessage.MESSAGE_TYPE_XUDT && message.getCalledPartyAddress() != null) { 
-                    if (message.getCalledPartyAddress().getGlobalTitle() != null) {
-                        KeyPair keyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.called_gt_decryption, message.getCalledPartyAddress().getGlobalTitle().getDigits());
-                        if (keyPair != null) {
-                            AbstractMap.SimpleEntry<SccpDataMessage, String> p = crypto.tcapDecrypt(message, SS7Firewall.sccpMessageFactory, keyPair);
-                            message = p.getKey();
-                            String r = p.getValue();
-                            if (!r.equals("")) {
-                                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, r, lua_hmap);
-                                return;
-                            }
-                        }
-                    }
-                }
-                // ------------------------------------------
-
                 // -------------- TCAP firewall -------------
                 // TCAP
                 byte[] data = message.getData();
@@ -1182,27 +1277,165 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
 
                     // Operation Code
                     comps = tcb.getComponent();
-
-                    // --------------- TCAP signature ---------------
+                    
+                    OperationCodeImpl oc = null;
                     if (comps != null) {
-                        if (message.getCallingPartyAddress() != null) { 
-                            if (message.getCallingPartyAddress().getGlobalTitle() != null) {
-                                // --------------- TCAP verify  ---------------
-                                int signature_ok = -1;  // no key
-                                PublicKey publicKey = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.calling_gt_verify, message.getCallingPartyAddress().getGlobalTitle().getDigits());
-                                if (publicKey != null) {
-                                    signature_ok = crypto.tcapVerify(message, tcb, comps, publicKey) ;
-                                    if (signature_ok == 0) {
-                                        // Drop not correctly signed messages
-                                        //logger.info("============ Wrong TCAP signature, message blocked. Calling GT = " + message.getCallingPartyAddress().getGlobalTitle().getDigits() + " ============");
+                        for (Component comp : comps) {
+                            if (comp == null) {
+                                continue;
+                            }
 
-                                        firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: Wrong TCAP signature", lua_hmap);
+                            switch (comp.getType()) {
+                            case Invoke:
+                                Invoke inv = (Invoke) comp;
+
+                                // Operation Code
+                                oc = (OperationCodeImpl) inv.getOperationCode();
+                                break;
+                            }
+                        }
+                    }
+
+                    // ------------ TCAP decryption -------------
+                    
+                    boolean needDTLSHandshake = false;
+                    String needDTLSHandshakeReason = "";
+                    
+                    if (message.getCalledPartyAddress() != null && message.getCalledPartyAddress().getGlobalTitle() != null
+                            && oc != null && oc.getLocalOperationCode() != OC_DTLS_HANDSHAKE_CLIENT && oc.getLocalOperationCode() != OC_DTLS_HANDSHAKE_SERVER ) { 
+                            
+                        // DTLS decryption
+                        if (oc.getLocalOperationCode() == OC_DTLS_DATA && dtls_engine_permanent_server.containsKey(getGTPrefix(message.getCallingPartyAddress().getGlobalTitle().getDigits()))) {
+                            
+                            AbstractMap.SimpleEntry<SccpDataMessage, String> p = ss7DTLSDecrypt(message, comps, dtls_engine_permanent_server.get(getGTPrefix(message.getCallingPartyAddress().getGlobalTitle().getDigits())));
+                            if (p != null) {
+                                SccpDataMessage m = p.getKey();
+                                String r = p.getValue();
+                                if (!r.equals("")) {
+                                    needDTLSHandshake = true;
+
+                                    needDTLSHandshakeReason = "needDTLSHandshake indicated, because failed to decrypt Invoke message from GT: " + message.getCallingPartyAddress().getGlobalTitle().getDigits();
+                                    
+                                    firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, r, lua_hmap);
+                                    return;
+                                }
+                                if (!dtls_engine_expiring_server.containsKey(getGTPrefix(message.getCallingPartyAddress().getGlobalTitle().getDigits()))) {
+                                    needDTLSHandshake = true;
+
+                                    needDTLSHandshakeReason = "needDTLSHandshake indicated, because session has expired for GT: " + message.getCallingPartyAddress().getGlobalTitle().getDigits();
+                                }
+
+                                message = m;
+                                
+                                // Change back to SCCP UDT from XUDT if possible
+                                if (message.getData().length < 240) {
+                                    lmrt = LongMessageRuleType.LONG_MESSAGE_FORBBIDEN;
+                                }
+                            }
+                        }
+                        /*// No DTLS engine, but recieved DTLS encrypted data
+                        else if (oc.getLocalOperationCode() == OC_DTLS_DATA) {
+                            needDTLSHandshakeReason = "needDTLSHandshake indicated, because no DTLS engine, but recieved Request with DTLS encrypted data from GT: " + message.getCalledPartyAddress().getGlobalTitle().getDigits();
+                            
+                            needDTLSHandshake = true;
+                        }*/
+                        // Asymmetric decryption
+                        else if (oc.getLocalOperationCode() == Crypto.OC_ASYNC_ENCRYPTION) { 
+                            KeyPair keyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.called_gt_decryption, message.getCalledPartyAddress().getGlobalTitle().getDigits());
+                            if (keyPair != null) {
+                                AbstractMap.SimpleEntry<SccpDataMessage, String> p = crypto.tcapDecrypt(message, comps, SS7Firewall.sccpMessageFactory, keyPair);
+                                
+                                
+                                if (p != null) {
+                                    message = p.getKey();
+                                    
+                                    // Change back to SCCP UDT from XUDT if possible
+                                    if (message.getData().length < 240) {
+                                        lmrt = LongMessageRuleType.LONG_MESSAGE_FORBBIDEN;
+                                    }
+                                    
+                                    String r = p.getValue();
+                                    if (!r.equals("")) {
+                                        firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, r, lua_hmap);
                                         return;
                                     }
                                 }
-                                // --------------------------------------------
                             }
                         }
+                    }
+                    // ------------------------------------------
+                    
+                    // Initiate DTLS handshake backwards towards Calling GT
+                    if (needDTLSHandshake
+                        && SS7FirewallConfig.dtls_encryption.equals("true")) {
+                        if (!dtls_handshake_timer.containsKey(message.getCallingPartyAddress().getGlobalTitle().getDigits())) {
+                            // Only if no handshaking is ongoing
+                            if (!dtls_engine_handshaking_client.containsKey(getGTPrefix(message.getCallingPartyAddress().getGlobalTitle().getDigits()))) {
+
+                                logger.info("Initiate DTLS handshake client side, backwards towards Calling GT: " + message.getCallingPartyAddress().getGlobalTitle().getDigits());
+                                logger.info("Initiate DTLS handshake reason: " + needDTLSHandshakeReason);
+
+                                final String calling_gt = String.valueOf(message.getCallingPartyAddress().getGlobalTitle().getDigits());
+
+                                final Mtp3UserPart m = mupReturn;
+                                
+                                Thread t = new Thread(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        try {
+
+                                            // Create engine
+                                            try {
+                                                dtls_engine_handshaking_client.put(getGTPrefix(calling_gt), dtls_createSSLEngine(true));
+
+                                            } catch (Exception ex) {
+                                                java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                                            }
+
+                                            // Create socket if does not exist
+                                            if (!datagramOverSS7Socket_inbound_client.containsKey(getGTPrefix(calling_gt))) {
+                                                datagramOverSS7Socket_inbound_client.put(getGTPrefix(calling_gt), new ConcurrentLinkedQueue<DatagramOverSS7Packet>());
+                                            }
+
+                                            dtls_handshake(dtls_engine_handshaking_client.get(getGTPrefix(calling_gt)), datagramOverSS7Socket_inbound_client.get(getGTPrefix(calling_gt)), m, opc, dpc, sls, ni, calling_gt, "client", false);
+                                        } catch (Exception ex) {
+                                            java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                                        }
+                                    }
+                                });
+                                t.start();
+                            }
+                                
+                            logger.debug("dtls_sessions_reverse.put " + message.getCallingPartyAddress().getGlobalTitle().getDigits() + " " + null);
+                            dtls_handshake_timer.put(message.getCallingPartyAddress().getGlobalTitle().getDigits(), null);
+ 
+                            
+                            
+                          }
+                    }
+                    // ------------------------------------------
+                    
+                    // --------------- TCAP signature ---------------
+                    if (message.getCallingPartyAddress() != null && message.getCallingPartyAddress().getGlobalTitle() != null 
+                            && oc != null && oc.getLocalOperationCode() != OC_DTLS_HANDSHAKE_CLIENT && oc.getLocalOperationCode() != OC_DTLS_HANDSHAKE_SERVER && oc.getLocalOperationCode() != OC_DTLS_DATA) { 
+                        // --------------- TCAP verify  ---------------
+                        int signature_ok = -1;  // no key
+                        PublicKey publicKey = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.calling_gt_verify, message.getCallingPartyAddress().getGlobalTitle().getDigits());
+                        if (publicKey != null) {
+                            signature_ok = crypto.tcapVerify(message, tcb, comps, publicKey) ;
+                            if (signature_ok == 0) {
+                                // Drop not correctly signed messages
+                                //logger.info("============ Wrong TCAP signature, message blocked. Calling GT = " + message.getCallingPartyAddress().getGlobalTitle().getDigits() + " ============");
+
+                                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW: Wrong TCAP signature", lua_hmap);
+                                return;
+                            }
+                            // Change back to SCCP UDT from XUDT if possible
+                            if (message.getData().length < 240) {
+                                lmrt = LongMessageRuleType.LONG_MESSAGE_FORBBIDEN;
+                            }
+                        }
+                        // --------------------------------------------
                     }
                     // ------------------------------------------
 
@@ -1420,7 +1653,200 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
                                 }
 
                             }
+                            
+                                                    
+                            // DTLS processing inbound handshake messages
+                            // Only targeting HPLMN
+                            if ((oc.getLocalOperationCode() == OC_DTLS_HANDSHAKE_CLIENT || oc.getLocalOperationCode() == OC_DTLS_HANDSHAKE_SERVER)
+                                && SS7FirewallConfig.dtls_encryption.equals("true")
+                                && SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCalledPartyAddress().getGlobalTitle().getDigits())
+                                && !SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCallingPartyAddress().getGlobalTitle().getDigits())
+                                        ) {
 
+                                        
+                                logger.info("Received DTLS handshake message from GT: " + message.getCallingPartyAddress().getGlobalTitle().getDigits());
+
+                                // Request (client -> server)
+                                if (oc.getLocalOperationCode() == OC_DTLS_HANDSHAKE_CLIENT) {
+                                //if (msg.isRequest()) {
+
+                                    // Create socket if does not exists
+                                    if (!datagramOverSS7Socket_inbound_server.containsKey(getGTPrefix(message.getCallingPartyAddress().getGlobalTitle().getDigits()))) {
+                                        datagramOverSS7Socket_inbound_server.put(getGTPrefix(message.getCallingPartyAddress().getGlobalTitle().getDigits()), new ConcurrentLinkedQueue<DatagramOverSS7Packet>());
+                                    }
+
+                                    Parameter p = inv.getParameter();
+                                    Parameter[] params = p.getParameters();
+                                    if (params != null && params.length >= 1) {
+
+                                        // DTLS data
+                                        Parameter p1 = params[0];
+
+                                        datagramOverSS7Socket_inbound_server.get(getGTPrefix(message.getCallingPartyAddress().getGlobalTitle().getDigits())).add(new DatagramOverSS7Packet(message.getCallingPartyAddress().getGlobalTitle().getDigits(), new DatagramPacket(p1.getData(), p1.getData().length)));
+                                    
+                                    }
+
+                                    boolean needHandshake = false;
+                                    String needHandshakeReason = "";
+
+                                    try {
+
+                                        // new handshaking peer
+                                        if(!dtls_engine_handshaking_server.containsKey(getGTPrefix(message.getCallingPartyAddress().getGlobalTitle().getDigits()))) {
+                                            needHandshake = true;
+
+                                            needHandshakeReason = "needDTLSHandshake indicated, because new handshaking client detected. Peer: " + message.getCallingPartyAddress().getGlobalTitle().getDigits();
+                                        }
+                                        // no thread exist
+                                        /*else if (!dtls_handshake_treads.containsKey(orig_realm)){
+                                            needHandshake = true;
+
+                                            needHandshakeReason = "Initiate DTLS, because handshaking thread does not exist anymore. Peer: " + orig_realm;
+                                        }*/
+                                        /*// thread not active
+                                        else if (!dtls_handshake_treads.get(orig_realm).isAlive()){
+                                            needHandshake = true;
+
+                                            needHandshakeReason = "Initiate DTLS, because handshaking thread is not alive. Peer: " + orig_realm;
+                                        }*/
+                                        /*// NOT_HANDSHAKING status
+                                        else if (dtls_engine.get(orig_realm).getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING){
+                                            needHandshake = true;
+
+                                            needHandshakeReason = "Initiate DTLS, because in NOT_HANDSHAKING status";
+                                        }*/
+
+                                        // dispatch handshake in new thread
+                                        if(needHandshake) {
+                                            // Only if no server handshaking is ongoing
+
+                                            if (/*(!dtls_handshake_treads.containsKey(orig_realm) || !dtls_handshake_treads.get(orig_realm).isAlive())
+                                                    && */!dtls_engine_handshaking_server.containsKey(getGTPrefix(getGTPrefix(message.getCallingPartyAddress().getGlobalTitle().getDigits())))) {
+
+                                                logger.info("Initiate DTLS handshake server side for peer: " + message.getCallingPartyAddress().getGlobalTitle().getDigits());
+                                                logger.info("Initiate DTLS handshake reason: " + needHandshakeReason);
+
+                                                final String calling_gt = String.valueOf(message.getCallingPartyAddress().getGlobalTitle().getDigits());
+
+                                                final Mtp3UserPart m = mupReturn;
+
+                                                Thread t = new Thread(new Runnable() {
+                                                    @Override
+                                                    public void run() {
+                                                        try {
+                                                            dtls_engine_handshaking_server.put(getGTPrefix(calling_gt), dtls_createSSLEngine(false));
+
+                                                            dtls_handshake(dtls_engine_handshaking_server.get(getGTPrefix(calling_gt)), datagramOverSS7Socket_inbound_server.get(getGTPrefix(calling_gt)), /*datagramOverDiameterSocket_outbound*/ m, opc, dpc, sls, ni, calling_gt, "server", false);
+                                                        } catch (Exception ex) {
+                                                            java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                                                        }
+                                                    }
+                                                });
+                                                t.start();
+
+                                            }
+
+                                        }
+
+                                    } catch (Exception ex) {
+                                        java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                                    }
+                                } 
+                                // Answer (server -> client)
+                                else if (oc.getLocalOperationCode() == OC_DTLS_HANDSHAKE_SERVER) {
+                                //else {
+
+                                    // Create socket if does not exists
+                                    if (!datagramOverSS7Socket_inbound_client.containsKey(getGTPrefix(message.getCallingPartyAddress().getGlobalTitle().getDigits()))) {
+                                        datagramOverSS7Socket_inbound_client.put(getGTPrefix(message.getCallingPartyAddress().getGlobalTitle().getDigits()), new ConcurrentLinkedQueue<DatagramOverSS7Packet>());
+                                    }
+
+                                    Parameter p = inv.getParameter();
+                                    Parameter[] params = p.getParameters();
+                                    if (params != null && params.length >= 1) {
+
+                                        // DTLS data
+                                        Parameter p1 = params[0];
+
+                                        datagramOverSS7Socket_inbound_client.get(getGTPrefix(message.getCallingPartyAddress().getGlobalTitle().getDigits())).add(new DatagramOverSS7Packet(message.getCallingPartyAddress().getGlobalTitle().getDigits(), new DatagramPacket(p1.getData(), p1.getData().length)));
+
+                                    }
+                                }
+                                
+                                
+                                // produce DTLS SS7 Result message
+                                TCEndMessage t = TcapFactory.createTCEndMessage();
+
+
+                                t.setDestinationTransactionId(Utils.encodeTransactionId(dialogId));
+                                // Create Dialog Portion
+                                DialogPortion dp = TcapFactory.createDialogPortion();
+
+                                dp.setOid(true);
+                                dp.setOidValue(new long[] { 0, 0, 17, 773, 1, 1, 1 });
+
+                                dp.setAsn(true);
+
+                                DialogRequestAPDUImpl diRequestAPDUImpl = new DialogRequestAPDUImpl();
+
+                                diRequestAPDUImpl.setApplicationContextName(ACN);
+                                diRequestAPDUImpl.setDoNotSendProtocolVersion(true);
+
+
+                                dp.setDialogAPDU(diRequestAPDUImpl);
+
+                                t.setDialogPortion(dp);
+
+
+
+                                Component[] c = new Component[1];
+
+                                c[0] = new ReturnResultLastImpl();
+                                ((ReturnResultLastImpl)c[0]).setInvokeId(1l);
+
+                                oc.setLocalOperationCode(oc.getLocalOperationCode());
+                                ((ReturnResultLastImpl)c[0]).setOperationCode(oc);
+
+
+                                // TODO
+                                Parameter p1 = TcapFactory.createParameter();
+                                p1.setTagClass(Tag.CLASS_PRIVATE);
+                                p1.setPrimitive(true);
+                                p1.setTag(Tag.STRING_OCTET);
+                                p1.setData("Av1".getBytes());
+
+                                Parameter p = TcapFactory.createParameter();
+                                p.setTagClass(Tag.CLASS_UNIVERSAL);
+                                p.setTag(0x04);
+                                p.setParameters(new Parameter[] { p1});
+                                ((ReturnResultLastImpl)c[0]).setParameter(p);
+
+
+
+                                t.setComponent(c);
+                                AsnOutputStream aos = new AsnOutputStream();
+                                try {
+                                    t.encode(aos);
+                                } catch (EncodeException ex) {
+                                    java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                                }
+
+                                byte[] _d = aos.toByteArray();
+
+                                LongMessageRuleType l = lmrt;
+                                SccpDataMessage m = SS7Firewall.sccpMessageFactory.createDataMessageClass0(message.getCallingPartyAddress(), message.getCalledPartyAddress(), message.getData(), message.getOriginLocalSsn(), false, null, null);
+                                m.setData(_d);
+
+                                logger.info("============ DTLS handshake Sending Result ============ ");
+
+                                // Use XUDT if required
+                                if (m.getData().length >= 240) {
+                                    l = LongMessageRuleType.XUDT_ENABLED;
+                                }
+                                sendSccpMessage(mupReturn, dpc, opc, sls, ni, l, m);
+                                return;
+                            }
+                            
                             // TCAP Cat1 filtering
                             if (oc != null) {
                                 //logger.debug("TCAP OC = " + oc.getStringValue());
@@ -1581,6 +2007,16 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
 
                             // Operation Code
                             oc = (OperationCodeImpl) result.getOperationCode();
+                            
+                            
+                            // DTLS answer messages
+                            // Only targeting HPLMN
+                            if ((oc.getLocalOperationCode() == OC_DTLS_HANDSHAKE_CLIENT || oc.getLocalOperationCode() == OC_DTLS_HANDSHAKE_SERVER)
+                                && SS7FirewallConfig.dtls_encryption.equals("true")) {
+
+                                    // Drop DTLS results
+                                    return;       
+                            }
 
                             // Encryption Autodiscovery Receiving Result
                             // Only targeting HPLMN
@@ -1638,10 +2074,8 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
 
                                 // do not forward message
                                 return;
-                            }      
-
-
-
+                            }
+                                           
                             break;
                         case ReturnError:
                             ReturnError re = (ReturnError) comp;
@@ -1715,8 +2149,40 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
                 }
                 // ------------------------------------------
 
+                
+                // ------------ TCAP encryption -------------
+                boolean signing_required = true;
+                if (message.getCalledPartyAddress() != null && message.getCalledPartyAddress().getGlobalTitle() != null) {
+                    // DTLS encryption
+                    if (dtls_engine_permanent_client.containsKey(getGTPrefix(message.getCalledPartyAddress().getGlobalTitle().getDigits()))) {
+
+                        AbstractMap.SimpleEntry<SccpDataMessage, LongMessageRuleType> p = ss7DTLSEncrypt(message, dtls_engine_permanent_client.get(getGTPrefix(message.getCalledPartyAddress().getGlobalTitle().getDigits())), lmrt);
+                        
+                        SccpDataMessage m = p.getKey();
+                        lmrt = p.getValue();
+                            
+                        // not needed to sign the DLTS encrypted messages
+                        signing_required = false;
+                        // unable to encrypt, better drop the DTLS engine
+                        if (m == null) {
+                            // expire session, should trigger new DTLS handshake
+                            dtls_engine_expiring_client.remove(getGTPrefix(message.getCalledPartyAddress().getGlobalTitle().getDigits()));
+                        }
+
+                        message = m;
+                    }
+                     // Asymmetric encryption
+                    else if (SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.called_gt_encryption, message.getCalledPartyAddress().getGlobalTitle().getDigits())) {
+                        PublicKey publicKey = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.called_gt_encryption, message.getCalledPartyAddress().getGlobalTitle().getDigits());
+                        if (publicKey != null) {
+                            AbstractMap.SimpleEntry<SccpDataMessage, LongMessageRuleType> p = crypto.tcapEncrypt(message, sccpMessageFactory, publicKey, lmrt);
+                            message = p.getKey();
+                            lmrt = p.getValue();
+                        }
+                    }
+                }
                 // --------------- TCAP signing ---------------
-                if (tag == TCBeginMessage._TAG) {
+                if (signing_required && tag == TCBeginMessage._TAG) {
                     KeyPair keyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.calling_gt_signing, message.getCallingPartyAddress().getGlobalTitle().getDigits());
                     if (keyPair != null) {
                         lmrt = crypto.tcapSign(message, tcb, comps, lmrt, keyPair);
@@ -1724,96 +2190,143 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
                 }
                 // --------------------------------------------
 
-                // ------------ TCAP encryption -------------
-                if (message.getCalledPartyAddress() != null) { 
-                    if (message.getCalledPartyAddress().getGlobalTitle() != null) {
-                        PublicKey publicKey = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.called_gt_encryption, message.getCalledPartyAddress().getGlobalTitle().getDigits());
-                        if (publicKey != null) {
-                            AbstractMap.SimpleEntry<SccpDataMessage, LongMessageRuleType> p = crypto.tcapEncrypt(message, sccpMessageFactory, publicKey, lmrt);
-                            message = p.getKey();
-                            lmrt = p.getValue();
-                        }
-                        // ------------ Encryption Autodiscovery ------------ 
-                        // only if not towards HPLMN
-                        else if (SS7FirewallConfig.encryption_autodiscovery.equals("true")
-                                && tag == TCBeginMessage._TAG
-                                && !SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCalledPartyAddress().getGlobalTitle().getDigits())
-                                && SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCallingPartyAddress().getGlobalTitle().getDigits())) {
+                
+                if (message.getCalledPartyAddress() != null && message.getCalledPartyAddress().getGlobalTitle() != null) {
+                    // ------------ DTLS Encryption client handshake initialization ------------ 
+                    if (SS7FirewallConfig.dtls_encryption.equals("true")
+                            &&
+                            // If not encrypted Requests towards non HPLMN
+                            (tag == TCBeginMessage._TAG
+                            && !SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCalledPartyAddress().getGlobalTitle().getDigits())
+                            && SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCallingPartyAddress().getGlobalTitle().getDigits()))
+                     ) {
 
-                            if (!encryption_autodiscovery_sessions.containsKey(message.getCalledPartyAddress().getGlobalTitle().getDigits().substring(0, Math.min(encryption_autodiscovery_digits, message.getCallingPartyAddress().getGlobalTitle().getDigits().length())))) {
-                                logger.debug("============ Preparing Autodiscovery Invoke ============ ");
+                        String _called_gt = message.getCalledPartyAddress().getGlobalTitle().getDigits();
 
-                                TCBeginMessage t = TcapFactory.createTCBeginMessage();
+                        // ------------ DTLS Encryption client handshake initialization ------------ 
+                        if (!dtls_handshake_timer.containsKey(_called_gt)) {
 
+                            if(!dtls_engine_expiring_client.containsKey(getGTPrefix(_called_gt)) && !dtls_engine_handshaking_client.containsKey(getGTPrefix(_called_gt))) {
 
-                                byte[] otid = { (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256) };
-
-                                // to this as soon as possible to prevent concurrent threads to duplicate the autodiscovery
-                                encryption_autodiscovery_sessions.put(message.getCalledPartyAddress().getGlobalTitle().getDigits().substring(0, Math.min(encryption_autodiscovery_digits, message.getCallingPartyAddress().getGlobalTitle().getDigits().length())), Utils.decodeTransactionId(otid));
-
-                                t.setOriginatingTransactionId(otid);
-                                // Create Dialog Portion
-                                DialogPortion dp = TcapFactory.createDialogPortion();
-
-                                dp.setOid(true);
-                                dp.setOidValue(new long[] { 0, 0, 17, 773, 1, 1, 1 });
-
-                                dp.setAsn(true);
-
-                                DialogRequestAPDUImpl diRequestAPDUImpl = new DialogRequestAPDUImpl();
-
-                                // TODO change Application Context
-                                ApplicationContextNameImpl acn = new ApplicationContextNameImpl();
-                                acn.setOid(new long[] { 0, 4, 0, 0, 1, 0, 19, 2 });
-
-                                diRequestAPDUImpl.setApplicationContextName(acn);
-                                diRequestAPDUImpl.setDoNotSendProtocolVersion(true);
-
-                                dp.setDialogAPDU(diRequestAPDUImpl);
-
-                                t.setDialogPortion(dp);
-
-                                Component[] c = new Component[1];
-
-                                c[0] = new InvokeImpl();
-                                ((InvokeImpl)c[0]).setInvokeId(1l);
-                                OperationCode oc = TcapFactory.createOperationCode();
-                                oc.setLocalOperationCode(OC_AUTO_ENCRYPTION);
-                                ((InvokeImpl)c[0]).setOperationCode(oc);
-
-
-                                t.setComponent(c);
-                                AsnOutputStream aos = new AsnOutputStream();
                                 try {
-                                    t.encode(aos);
-                                } catch (EncodeException ex) {
+
+                                    logger.info("Initiate DTLS handshake client side for GT: " + _called_gt);
+
+                                    final String called_gt = String.valueOf(_called_gt);
+
+                                    final Mtp3UserPart m = mup;
+
+                                    Thread t = new Thread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            try {
+
+                                                dtls_engine_handshaking_client.put(getGTPrefix(called_gt), dtls_createSSLEngine(true));
+
+                                                // Create socket if does not exists
+                                                if (!datagramOverSS7Socket_inbound_client.containsKey(getGTPrefix(called_gt))) {
+                                                    datagramOverSS7Socket_inbound_client.put(getGTPrefix(called_gt), new ConcurrentLinkedQueue<DatagramOverSS7Packet>());
+                                                }
+
+                                                dtls_handshake(dtls_engine_handshaking_client.get(getGTPrefix(called_gt)), datagramOverSS7Socket_inbound_client.get(getGTPrefix(called_gt)), m, dpc, opc, sls, ni, called_gt, "client", true);
+                                            } catch (Exception ex) {
+                                                java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                                            }
+                                        }
+                                    });
+                                    t.start();
+
+
+                                } catch (Exception ex) {
                                     java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
                                 }
 
-                                byte[] _d = aos.toByteArray();
-
-                                LongMessageRuleType l = lmrt;
-                                SccpDataMessage m = SS7Firewall.sccpMessageFactory.createDataMessageClass0(message.getCalledPartyAddress(), message.getCallingPartyAddress(), message.getData(), message.getOriginLocalSsn(), false, null, null);
-                                m.setData(_d);
-
-                                // --------- Add also TCAP signature ------------
-                                KeyPair keyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.calling_gt_signing, message.getCallingPartyAddress().getGlobalTitle().getDigits());
-                                if (keyPair != null) {
-                                    lmrt = crypto.tcapSign(m, t, c, lmrt, keyPair);
-                                }
-                                // ----------------------------------------------
-
-                                logger.info("============ Sending Autodiscovery Invoke ============ ");
-
-                                // Use XUDT if required
-                                if (m.getData().length >= 240) {
-                                    l = LongMessageRuleType.XUDT_ENABLED;
-                                }
-                                sendSccpMessage(mup, opc, dpc, sls, ni, l, m);
+                                logger.debug("dtls_sessions_reverse.put " + _called_gt + " " + null);
+                                dtls_handshake_timer.put(_called_gt, null);
 
                             }
-                            // ---------- Encryption Autodiscovery End ---------- 
                         }
+                    }
+                    // ------------ Encryption Autodiscovery ------------ 
+                    // only if not towards HPLMN
+                    else if (SS7FirewallConfig.encryption_autodiscovery.equals("true")
+                            && tag == TCBeginMessage._TAG
+                            && !SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCalledPartyAddress().getGlobalTitle().getDigits())
+                            && SS7FirewallConfig.simpleWildcardCheck(SS7FirewallConfig.hplmn_gt, message.getCallingPartyAddress().getGlobalTitle().getDigits())) {
+
+                        if (!encryption_autodiscovery_sessions.containsKey(message.getCalledPartyAddress().getGlobalTitle().getDigits().substring(0, Math.min(encryption_autodiscovery_digits, message.getCallingPartyAddress().getGlobalTitle().getDigits().length())))) {
+                            logger.debug("============ Preparing Autodiscovery Invoke ============ ");
+
+                            TCBeginMessage t = TcapFactory.createTCBeginMessage();
+
+
+                            byte[] otid = { (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256) };
+
+                            // to this as soon as possible to prevent concurrent threads to duplicate the autodiscovery
+                            encryption_autodiscovery_sessions.put(message.getCalledPartyAddress().getGlobalTitle().getDigits().substring(0, Math.min(encryption_autodiscovery_digits, message.getCallingPartyAddress().getGlobalTitle().getDigits().length())), Utils.decodeTransactionId(otid));
+
+                            t.setOriginatingTransactionId(otid);
+                            // Create Dialog Portion
+                            DialogPortion dp = TcapFactory.createDialogPortion();
+
+                            dp.setOid(true);
+                            dp.setOidValue(new long[] { 0, 0, 17, 773, 1, 1, 1 });
+
+                            dp.setAsn(true);
+
+                            DialogRequestAPDUImpl diRequestAPDUImpl = new DialogRequestAPDUImpl();
+
+                            // TODO change Application Context
+                            ApplicationContextNameImpl acn = new ApplicationContextNameImpl();
+                            acn.setOid(new long[] { 0, 4, 0, 0, 1, 0, 19, 2 });
+
+                            diRequestAPDUImpl.setApplicationContextName(acn);
+                            diRequestAPDUImpl.setDoNotSendProtocolVersion(true);
+
+                            dp.setDialogAPDU(diRequestAPDUImpl);
+
+                            t.setDialogPortion(dp);
+
+                            Component[] c = new Component[1];
+
+                            c[0] = new InvokeImpl();
+                            ((InvokeImpl)c[0]).setInvokeId(1l);
+                            OperationCode oc = TcapFactory.createOperationCode();
+                            oc.setLocalOperationCode(OC_AUTO_ENCRYPTION);
+                            ((InvokeImpl)c[0]).setOperationCode(oc);
+
+
+                            t.setComponent(c);
+                            AsnOutputStream aos = new AsnOutputStream();
+                            try {
+                                t.encode(aos);
+                            } catch (EncodeException ex) {
+                                java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+                            }
+
+                            byte[] _d = aos.toByteArray();
+
+                            LongMessageRuleType l = lmrt;
+                            SccpDataMessage m = SS7Firewall.sccpMessageFactory.createDataMessageClass0(message.getCalledPartyAddress(), message.getCallingPartyAddress(), message.getData(), message.getOriginLocalSsn(), false, null, null);
+                            m.setData(_d);
+
+                            // --------- Add also TCAP signature ------------
+                            KeyPair keyPair = SS7FirewallConfig.simpleWildcardFind(SS7FirewallConfig.calling_gt_signing, message.getCallingPartyAddress().getGlobalTitle().getDigits());
+                            if (keyPair != null) {
+                                lmrt = crypto.tcapSign(m, t, c, lmrt, keyPair);
+                            }
+                            // ----------------------------------------------
+
+                            logger.info("============ Sending Autodiscovery Invoke ============ ");
+
+                            // Use XUDT if required
+                            if (m.getData().length >= 240) {
+                                l = LongMessageRuleType.XUDT_ENABLED;
+                            }
+                            sendSccpMessage(mup, opc, dpc, sls, ni, l, m);
+
+                        }
+                        // ---------- Encryption Autodiscovery End ---------- 
                     }
                 }
                 // ------------------------------------------
@@ -3105,5 +3618,778 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
         
         return s;
     }
+    
+    /**
+     * Get DTSL context
+     */
+    SSLContext dtls_getDTLSContext() throws Exception {
+        KeyStore ks = KeyStore.getInstance("JKS");
+        KeyStore ts = KeyStore.getInstance("JKS");
 
+        char[] passphrase = dtls_passwd.toCharArray();
+
+        try (FileInputStream fis = new FileInputStream(dtls_keyFilename)) {
+            ks.load(fis, passphrase);
+        }
+
+        try (FileInputStream fis = new FileInputStream(dtls_trustFilename)) {
+            ts.load(fis, passphrase);
+        }
+
+        kmf = KeyManagerFactory.getInstance("SunX509");
+        kmf.init(ks, passphrase);
+
+        TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
+        tmf.init(ts);
+
+        SSLContext sslCtx = SSLContext.getInstance("DTLS");
+
+        
+        TrustManager tm = new X509TrustManager() {
+            public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+            }
+
+            public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+            }
+
+            public X509Certificate[] getAcceptedIssuers() {
+                return null;
+            }
+        };
+        
+        //sslCtx.init(kmf.getKeyManagers(), /*tmf.getTrustManagers()*/new TrustManager[] { tm }, /*null*/new java.security.SecureRandom());
+        sslCtx.init(kmf.getKeyManagers(), tmf.getTrustManagers(), new java.security.SecureRandom());
+
+        return sslCtx;
+    }
+    /**
+     * Create engine for DTLS operations
+     */
+    SSLEngine dtls_createSSLEngine(boolean isClient) throws Exception {
+        SSLContext context = dtls_getDTLSContext();
+        SSLEngine engine = context.createSSLEngine();
+
+        SSLParameters paras = engine.getSSLParameters();
+        paras.setMaximumPacketSize(DTLS_MAXIMUM_PACKET_SIZE);
+
+        engine.setUseClientMode(isClient);
+        engine.setSSLParameters(paras);
+        
+        // Server requests client certificate authentication
+        if (!isClient) {
+            engine.setNeedClientAuth(true);
+        }
+
+        return engine;
+    }
+    
+    /**
+     * DTLS retransmission if timeout
+     */
+    boolean dtls_onReceiveTimeout(SSLEngine engine, /*SocketAddress socketAddr,*/ String peer_realm, 
+            String side, List<DatagramOverSS7Packet> packets) throws Exception {
+
+        SSLEngineResult.HandshakeStatus hs = engine.getHandshakeStatus();
+        if (hs == SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING) {
+            return false;
+        } else {
+            // retransmission of handshake messages
+            return dtls_produceHandshakePackets(engine, peer_realm, side, packets);
+        }
+    }
+    
+    /**
+     * DTLS handshake
+     */
+    void dtls_handshake(SSLEngine engine, 
+            /*DatagramSocket socket,*/
+            ConcurrentLinkedQueue<DatagramOverSS7Packet> datagramOverSS7Socket_in, 
+            //ConcurrentLinkedQueue<DatagramOverSS7Packet> datagramOverSS7Socket_out,
+            Mtp3UserPart mup, 
+            int dpc, 
+            int opc, 
+            int sls, 
+            int ni,
+            /*SocketAddress peerAddr,*/
+            String peer_gt,
+            String side,
+            boolean forwardIndicator) throws Exception {
+
+        long _t = System.currentTimeMillis();
+        long _end = _t + DTLS_MAX_HANDSHAKE_DURATION*1000;
+        
+        boolean endLoops = false;
+        int loops = DTLS_MAX_HANDSHAKE_LOOPS;
+        
+        engine.beginHandshake();
+        
+        while (!endLoops && System.currentTimeMillis() < _end/*&&
+                (dtls_serverException == null) && (dtls_clientException == null)*/) {
+
+            if (--loops < 0) {
+                throw new RuntimeException(
+                        "Too much loops to produce handshake packets");
+            }
+
+            SSLEngineResult.HandshakeStatus hs = engine.getHandshakeStatus();
+            logger.info("DTLS " + side + "=======handshake(" + loops + ", " + hs + ")=======");
+            if (hs == SSLEngineResult.HandshakeStatus.NEED_UNWRAP ||
+                hs == SSLEngineResult.HandshakeStatus.NEED_UNWRAP_AGAIN) {
+
+                logger.debug("DTLS " + side + ": " + "Receive DTLS records, handshake status is " + hs);
+
+                ByteBuffer iNet;
+                ByteBuffer iApp;
+                if (hs == SSLEngineResult.HandshakeStatus.NEED_UNWRAP) {
+                    byte[] buf = new byte[DTLS_BUFFER_SIZE];
+                    DatagramOverSS7Packet packet;// = new DatagramOverSS7Packet( peer_realm, new DatagramPacket(buf, buf.length));
+                    
+                    //try {
+                        //socket.receive(packet);
+                    long t = System.currentTimeMillis();
+                    long end = t + DTLS_SOCKET_TIMEOUT;
+                    while(datagramOverSS7Socket_in.isEmpty() && System.currentTimeMillis() < end) {
+                        Thread.sleep(DTLS_SOCKET_THREAD_SLEEP);
+                    }
+                    packet = datagramOverSS7Socket_in.poll();
+                    
+                    //} catch (SocketTimeoutException ste) {
+                    if (packet == null) {
+                        //log(side, "Warning: " + ste);
+                        logger.warn("DTLS " + side + ": " + "Warning: DTLS_SOCKET_TIMEOUT " + DTLS_SOCKET_TIMEOUT);
+
+                        List<DatagramOverSS7Packet> packets = new ArrayList<>();
+                        boolean hasFinished = dtls_onReceiveTimeout(engine, peer_gt, side, packets);
+
+                        logger.debug("DTLS " + side + ": " + "Reproduced " + packets.size() + " packets");
+                        for (DatagramOverSS7Packet p : packets) {
+                            //printHex("Reproduced packet", p.getP().getData(), p.getP().getOffset(), p.getP().getLength());
+                            
+                            //socket.send(p);
+                            //datagramOverSS7Socket_out.add(p);
+                            
+                            // initiate SS7 message
+                            dtls_sendDatagramOverSS7(mup, dpc, opc, sls, ni, peer_gt, p, side, forwardIndicator);
+                            
+                        }
+
+                        if (hasFinished) {
+                            logger.debug("DTLS " + side + ": " + "Handshake status is FINISHED "
+                                    + "after calling onReceiveTimeout(), "
+                                    + "finish the loop");
+                            endLoops = true;
+                        }
+
+                        logger.debug("DTLS " + side + ": " + "New handshake status is "
+                                + engine.getHandshakeStatus());
+
+                        continue;
+                    }
+
+                    //printHex("Poll packet", packet.getP().getData(), packet.getP().getOffset(), packet.getP().getLength());
+                            
+                    logger.info("dtls_handshake: Read packet from datagramOverSS7Socket_in");
+                    iNet = ByteBuffer.wrap(packet.getP().getData(), 0, packet.getP().getLength());
+                    iApp = ByteBuffer.allocate(DTLS_BUFFER_SIZE);                  
+                } else {
+                    iNet = ByteBuffer.allocate(0);
+                    iApp = ByteBuffer.allocate(DTLS_BUFFER_SIZE);
+                }
+
+                SSLEngineResult r = engine.unwrap(iNet, iApp);
+                SSLEngineResult.Status rs = r.getStatus();
+                hs = r.getHandshakeStatus();
+                if (rs == SSLEngineResult.Status.OK) {
+                    // OK
+                } else if (rs == SSLEngineResult.Status.BUFFER_OVERFLOW) {
+                    logger.debug("DTLS " + side + ": " + "BUFFER_OVERFLOW, handshake status is " + hs);
+
+                    // the client maximum fragment size config does not work?
+                    throw new Exception("Buffer overflow: " +
+                        "incorrect client maximum fragment size");
+                } else if (rs == SSLEngineResult.Status.BUFFER_UNDERFLOW) {
+                    logger.debug("DTLS " + side + ": " + "BUFFER_UNDERFLOW, handshake status is " + hs);
+
+                    // bad packet, or the client maximum fragment size
+                    // config does not work?
+                    if (hs != SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING) {
+                        throw new Exception("Buffer underflow: " +
+                            "incorrect client maximum fragment size");
+                    } // otherwise, ignore this packet
+                } else if (rs == SSLEngineResult.Status.CLOSED) {
+                    throw new Exception(
+                            "SSL engine closed, handshake status is " + hs);
+                } else {
+                    throw new Exception("Can't reach here, result is " + rs);
+                }
+
+                if (hs == SSLEngineResult.HandshakeStatus.FINISHED) {
+                    logger.debug("DTLS " + side + ": " + "Handshake status is FINISHED, finish the loop");
+                    endLoops = true;
+                }
+            } else if (hs == SSLEngineResult.HandshakeStatus.NEED_WRAP) {
+                List<DatagramOverSS7Packet> packets = new ArrayList<>();
+                boolean hasFinished = dtls_produceHandshakePackets(
+                    engine, /*peerAddr,*/ peer_gt, side, packets);
+
+                logger.debug("DTLS " + side + ": " + "Produced " + packets.size() + " packets");
+                for (DatagramOverSS7Packet p : packets) {
+                    //socket.send(p);
+                    
+                    
+                    //datagramOverSS7Socket_out.add(p);
+                    // forward message
+                    dtls_sendDatagramOverSS7(mup, dpc, opc, sls, ni, peer_gt, p, side, forwardIndicator);                                
+                    
+                }
+
+                if (hasFinished) {
+                    logger.debug("DTLS " + side + ": " + "Handshake status is FINISHED "
+                            + "after producing handshake packets, "
+                            + "finish the loop");
+                    endLoops = true;
+                }
+            } else if (hs == SSLEngineResult.HandshakeStatus.NEED_TASK) {
+                dtls_runDelegatedTasks(engine);
+            } else if (hs == SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING) {
+                logger.debug("DTLS " + side + ": " +
+                    "Handshake status is NOT_HANDSHAKING, finish the loop");
+                endLoops = true;
+            } else if (hs == SSLEngineResult.HandshakeStatus.FINISHED) {
+                throw new Exception(
+                        "Unexpected status, SSLEngine.getHandshakeStatus() "
+                                + "shouldn't return FINISHED");
+            } else {
+                throw new Exception(
+                        "Can't reach here, handshake status is " + hs);
+            }
+        }
+
+        SSLEngineResult.HandshakeStatus hs = engine.getHandshakeStatus();
+        logger.debug("DTLS " + side + ": " + "Handshake finished, status is " + hs);
+
+        if (engine.getHandshakeSession() != null) {
+            throw new Exception(
+                    "Handshake finished, but handshake session is not null");
+        }
+
+        SSLSession session = engine.getSession();
+        if (session == null) {
+            throw new Exception("Handshake finished, but session is null");
+        }
+        logger.info("DTLS " + side + ": " + "Negotiated protocol is " + session.getProtocol());
+        logger.info("DTLS " + side + ": " + "Negotiated cipher suite is " + session.getCipherSuite());
+        
+        // store SSL engine only if some cipher is negotiated
+        if (!session.getProtocol().equals("NONE") && !session.getCipherSuite().equals("SSL_NULL_WITH_NULL_NULL")) {
+            if (side.equals("client")) {
+                dtls_engine_permanent_client.put(getGTPrefix(peer_gt), engine);
+                dtls_engine_expiring_client.put(getGTPrefix(peer_gt), engine);
+                dtls_engine_handshaking_client.remove(getGTPrefix(peer_gt));
+                datagramOverSS7Socket_inbound_client.remove(getGTPrefix(peer_gt));
+            } else if (side.equals("server")) {
+                dtls_engine_permanent_server.put(getGTPrefix(peer_gt), engine);
+                dtls_engine_expiring_server.put(getGTPrefix(peer_gt), engine);
+                dtls_engine_handshaking_server.remove(getGTPrefix(peer_gt));
+                datagramOverSS7Socket_inbound_server.remove(getGTPrefix(peer_gt));
+            }  else {
+                logger.error("dtls_handshake: Not client and not server side.");
+            }
+            
+            logger.info("DTLS " + side + ": " + "Storing the SSLengine for peer: " + peer_gt);
+        }
+        
+
+        // handshake status should be NOT_HANDSHAKING
+        //
+        // According to the spec, SSLEngine.getHandshakeStatus() can't
+        // return FINISHED.
+        if (hs != SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING) {
+            throw new Exception("Unexpected handshake status " + hs);
+        }
+    }
+    
+    /**
+     * DTLS produce handshake packets
+     */
+    boolean dtls_produceHandshakePackets(SSLEngine engine, /*SocketAddress socketAddr,*/ String peer_realm,
+            String side, List<DatagramOverSS7Packet> packets) throws Exception {
+
+        long _t = System.currentTimeMillis();
+        long _end = _t + DTLS_MAX_HANDSHAKE_DURATION*1000;
+
+        boolean endLoops = false;
+        int loops = DTLS_MAX_HANDSHAKE_LOOPS / 2;
+        while (!endLoops && System.currentTimeMillis() < _end/*&&
+                (dtls_serverException == null) && (dtls_clientException == null)*/) {
+
+            if (--loops < 0) {
+                throw new RuntimeException(
+                        "Too much loops to produce handshake packets");
+            }
+
+            ByteBuffer oNet = ByteBuffer.allocate(DTLS_BUFFER_SIZE);
+            ByteBuffer oApp = ByteBuffer.allocate(0);
+            SSLEngineResult r = engine.wrap(oApp, oNet);
+            oNet.flip();
+
+            SSLEngineResult.Status rs = r.getStatus();
+            SSLEngineResult.HandshakeStatus hs = r.getHandshakeStatus();
+            logger.debug("DTLS " + side + ": " + "----produce handshake packet(" +
+                    loops + ", " + rs + ", " + hs + ")----");
+            if (rs == SSLEngineResult.Status.BUFFER_OVERFLOW) {
+                // the client maximum fragment size config does not work?
+                throw new Exception("Buffer overflow: " +
+                            "incorrect server maximum fragment size");
+            } else if (rs == SSLEngineResult.Status.BUFFER_UNDERFLOW) {
+                logger.debug("DTLS " + side + ": " +
+                        "Produce handshake packets: BUFFER_UNDERFLOW occured");
+                logger.debug("DTLS " + side + ": " +
+                        "Produce handshake packets: Handshake status: " + hs);
+                // bad packet, or the client maximum fragment size
+                // config does not work?
+                if (hs != SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING) {
+                    throw new Exception("Buffer underflow: " +
+                            "incorrect server maximum fragment size");
+                } // otherwise, ignore this packet
+            } else if (rs == SSLEngineResult.Status.CLOSED) {
+                throw new Exception("SSLEngine has closed");
+            } else if (rs == SSLEngineResult.Status.OK) {
+                // OK
+            } else {
+                throw new Exception("Can't reach here, result is " + rs);
+            }
+
+            // SSLEngineResult.Status.OK:
+            if (oNet.hasRemaining()) {
+                byte[] ba = new byte[oNet.remaining()];
+                oNet.get(ba);
+                DatagramOverSS7Packet packet = createHandshakePacket(ba, peer_realm);
+                packets.add(packet);
+            }
+
+            if (hs == SSLEngineResult.HandshakeStatus.FINISHED) {
+                logger.debug("DTLS " + side + ": " + "Produce handshake packets: "
+                            + "Handshake status is FINISHED, finish the loop");
+                return true;
+            }
+
+            boolean endInnerLoop = false;
+            SSLEngineResult.HandshakeStatus nhs = hs;
+            while (!endInnerLoop) {
+                if (nhs == SSLEngineResult.HandshakeStatus.NEED_TASK) {
+                    dtls_runDelegatedTasks(engine);
+                } else if (nhs == SSLEngineResult.HandshakeStatus.NEED_UNWRAP ||
+                    nhs == SSLEngineResult.HandshakeStatus.NEED_UNWRAP_AGAIN ||
+                    nhs == SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING) {
+
+                    endInnerLoop = true;
+                    endLoops = true;
+                } else if (nhs == SSLEngineResult.HandshakeStatus.NEED_WRAP) {
+                    endInnerLoop = true;
+                } else if (nhs == SSLEngineResult.HandshakeStatus.FINISHED) {
+                    throw new Exception(
+                            "Unexpected status, SSLEngine.getHandshakeStatus() "
+                                    + "shouldn't return FINISHED");
+                } else {
+                    throw new Exception("Can't reach here, handshake status is "
+                            + nhs);
+                }
+                nhs = engine.getHandshakeStatus();
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * DTLS createHandshakePacket
+     */
+    DatagramOverSS7Packet createHandshakePacket(byte[] ba, /*SocketAddress socketAddr*/ String peer_realm) {
+        return new DatagramOverSS7Packet(peer_realm, new DatagramPacket(ba, ba.length));
+    }
+    
+    /**
+     * DTLS run delegated tasks
+     */
+    void dtls_runDelegatedTasks(SSLEngine engine) throws Exception {
+        Runnable runnable;
+        while ((runnable = engine.getDelegatedTask()) != null) {
+            runnable.run();
+        }
+
+        SSLEngineResult.HandshakeStatus hs = engine.getHandshakeStatus();
+        if (hs == SSLEngineResult.HandshakeStatus.NEED_TASK) {
+            throw new Exception("handshake shouldn't need additional tasks");
+        }
+    }
+    
+    void dtls_sendDatagramOverSS7(Mtp3UserPart mup, int dpc, int opc, int sls, int ni, String _peer_gt, DatagramOverSS7Packet p, String side, boolean forwardIndicator) {
+        
+        LongMessageRuleType lmrt = LongMessageRuleType.XUDT_ENABLED;
+        GlobalTitle callingGT = SS7Firewall.sccpProvider.getParameterFactory().createGlobalTitle(SS7FirewallConfig.fw_gt.firstKey(), 0, org.mobicents.protocols.ss7.indicator.NumberingPlan.ISDN_MOBILE, null, NatureOfAddress.INTERNATIONAL);
+        GlobalTitle calledGT = SS7Firewall.sccpProvider.getParameterFactory().createGlobalTitle(_peer_gt, 0, org.mobicents.protocols.ss7.indicator.NumberingPlan.ISDN_MOBILE, null, NatureOfAddress.INTERNATIONAL);
+        SccpAddress callingParty = SS7Firewall.sccpProvider.getParameterFactory().createSccpAddress(RoutingIndicator.ROUTING_BASED_ON_GLOBAL_TITLE, callingGT, 1, 8);
+        SccpAddress calledParty = SS7Firewall.sccpProvider.getParameterFactory().createSccpAddress(RoutingIndicator.ROUTING_BASED_ON_GLOBAL_TITLE, calledGT, 2, 8);
+        
+        byte[] data = {0};
+        SccpDataMessage message = SS7Firewall.sccpMessageFactory.createDataMessageClass0(calledParty, callingParty, data, 8, false, null, null);
+                    
+        
+        TCBeginMessage t = TcapFactory.createTCBeginMessage();
+
+
+        byte[] otid = { (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256) };
+
+        // to this as soon as possible to prevent concurrent threads to duplicate the autodiscovery
+        encryption_autodiscovery_sessions.put(message.getCalledPartyAddress().getGlobalTitle().getDigits().substring(0, Math.min(encryption_autodiscovery_digits, message.getCallingPartyAddress().getGlobalTitle().getDigits().length())), Utils.decodeTransactionId(otid));
+
+        t.setOriginatingTransactionId(otid);
+        // Create Dialog Portion
+        DialogPortion dp = TcapFactory.createDialogPortion();
+
+        dp.setOid(true);
+        dp.setOidValue(new long[] { 0, 0, 17, 773, 1, 1, 1 });
+
+        dp.setAsn(true);
+
+        DialogRequestAPDUImpl diRequestAPDUImpl = new DialogRequestAPDUImpl();
+
+        // TODO change Application Context
+        ApplicationContextNameImpl acn = new ApplicationContextNameImpl();
+        acn.setOid(new long[] { 0, 4, 0, 0, 1, 0, 19, 2 });
+
+        diRequestAPDUImpl.setApplicationContextName(acn);
+        diRequestAPDUImpl.setDoNotSendProtocolVersion(true);
+
+        dp.setDialogAPDU(diRequestAPDUImpl);
+
+        t.setDialogPortion(dp);
+
+        Component[] c = new Component[1];
+
+        c[0] = new InvokeImpl();
+        ((InvokeImpl)c[0]).setInvokeId(1l);
+        OperationCode oc = TcapFactory.createOperationCode();
+        if (side.equals("client")) {
+            oc.setLocalOperationCode(OC_DTLS_HANDSHAKE_CLIENT);
+        } else if (side.equals("server")) {
+            oc.setLocalOperationCode(OC_DTLS_HANDSHAKE_SERVER);
+        } else {
+            logger.error("dtls_sendDatagramOverSS7: Not client and not server side.");
+            return;
+        }
+        ((InvokeImpl)c[0]).setOperationCode(oc);
+        
+        // DATA
+        Parameter p1 = TcapFactory.createParameter();
+        p1.setTagClass(Tag.CLASS_PRIVATE);
+        p1.setPrimitive(true);
+        p1.setTag(Tag.STRING_OCTET);
+        p1.setData(p.getP().getData());
+
+        // DTLS data
+        Parameter _p = TcapFactory.createParameter();
+        _p.setTagClass(Tag.CLASS_UNIVERSAL);
+        _p.setTag(0x04);
+        _p.setParameters(new Parameter[] { p1 });
+        ((InvokeImpl)c[0]).setParameter(_p);
+
+        t.setComponent(c);
+        AsnOutputStream aos = new AsnOutputStream();
+        try {
+            t.encode(aos);
+        } catch (EncodeException ex) {
+            java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+        }
+
+        byte[] _d = aos.toByteArray();
+
+        LongMessageRuleType l = lmrt;
+        SccpDataMessage m = SS7Firewall.sccpMessageFactory.createDataMessageClass0(message.getCalledPartyAddress(), message.getCallingPartyAddress(), message.getData(), message.getOriginLocalSsn(), false, null, null);
+        m.setData(_d);
+
+        logger.info("============ Sending DTLS ============ ");
+
+        // Use XUDT if required
+        if (m.getData().length >= 240) {
+            l = LongMessageRuleType.XUDT_ENABLED;
+        }
+        sendSccpMessage(mup, opc, dpc, sls, ni, l, m);
+          
+    }
+    
+    
+    /**
+     * DTLS encrypt byte buffer
+     */
+    boolean ss7DTLSEncryptBuffer(SSLEngine engine, ByteBuffer source, ByteBuffer appNet) throws Exception {
+
+        //printHex("Received application data for Encrypt", source);
+        
+        List<DatagramPacket> packets = new ArrayList<>();
+        SSLEngineResult r = engine.wrap(source, appNet);
+        appNet.flip();
+
+        SSLEngineResult.Status rs = r.getStatus();
+        if (rs == SSLEngineResult.Status.BUFFER_OVERFLOW) {
+            // the client maximum fragment size config does not work?
+            logger.warn("Buffer overflow: " + "incorrect server maximum fragment size");
+            return false;
+        } else if (rs == SSLEngineResult.Status.BUFFER_UNDERFLOW) {
+            // unlikely
+            logger.warn("Buffer underflow during wraping");
+            return false;
+        } else if (rs == SSLEngineResult.Status.CLOSED) {
+            logger.warn("SSLEngine has closed");
+            return false;
+        } else if (rs == SSLEngineResult.Status.OK) {
+            // OK
+        } else {
+            logger.warn("Can't reach here, result is " + rs);
+            return false;
+        }
+
+        // SSLEngineResult.Status.OK:
+        // printHex("Produced application data by Encrypt", appNet);
+        return true;
+    }
+    
+    /**
+     * DTLS decrypt byte buffer
+     */
+    boolean ss7DTLSDecryptBuffer(SSLEngine engine, ByteBuffer source, ByteBuffer recBuffer) throws Exception {
+     
+        //printHex("Received application data for Decrypt", source);
+        
+        SSLEngineResult r = engine.unwrap(source, recBuffer);
+        recBuffer.flip();
+        
+        SSLEngineResult.Status rs = r.getStatus();
+        if (rs == SSLEngineResult.Status.BUFFER_OVERFLOW) {
+            // the client maximum fragment size config does not work?
+            logger.warn("Buffer overflow: " + "incorrect server maximum fragment size");
+            return false;
+        } else if (rs == SSLEngineResult.Status.BUFFER_UNDERFLOW) {
+            // unlikely
+            logger.warn("Buffer underflow during wraping");
+            return false;
+        } else if (rs == SSLEngineResult.Status.CLOSED) {
+            logger.warn("SSLEngine has closed");
+            return false;
+        } else if (rs == SSLEngineResult.Status.OK) {
+            // OK
+        } else {
+            logger.warn("Can't reach here, result is " + rs);
+            return false;
+        }
+        
+        //printHex("Produced application data by Decrypt", recBuffer);
+        return true;
+    }
+     
+    /**
+     * DTLS encrypt
+     * @param message
+     * @param engine
+     * @param lmrt Long Message Rule Type, if UDT or XUDT should be send
+     * @return AbstractMap.SimpleEntry<message, lmrt> - message and indicator if UDT or XUDT should be send
+     */
+    public AbstractMap.SimpleEntry<SccpDataMessage, LongMessageRuleType> ss7DTLSEncrypt(SccpDataMessage message, SSLEngine engine, LongMessageRuleType lmrt) {
+        
+        logger.debug("== ss7DTLSEncrypt ==");
+        
+        LongMessageRuleType l = lmrt;
+        
+        try {
+            
+            // Sending XUDT message from UDT message
+            
+            byte [] d = message.getData();
+
+            logger.debug("plainText = " + d.toString());
+            logger.debug("plainText.size = " + d.length);
+            
+            /*// SPI(version) and TVP(timestamp)
+            byte[] SPI = {0x00, 0x00, 0x00, 0x00};  // TODO
+            byte[] TVP = {0x00, 0x00, 0x00, 0x00};
+
+            long t = System.currentTimeMillis()/100;    // in 0.1s
+            TVP[0] = (byte) ((t >> 24) & 0xFF);
+            TVP[1] = (byte) ((t >> 16) & 0xFF);
+            TVP[2] = (byte) ((t >>  8) & 0xFF);
+            TVP[3] = (byte) ((t >>  0) & 0xFF);*/
+            
+            ByteBuffer cipherTextBuffer = ByteBuffer.allocate(DTLS_BUFFER_SIZE);
+            boolean res = ss7DTLSEncryptBuffer(engine, ByteBuffer.wrap(d, 0, d.length), cipherTextBuffer);
+            if (res == false) {
+                logger.warn("diameterDTLSEncrypt: Failed encryption of DTLS data");
+                return null;
+            }
+            
+            byte[] cipherText = new byte[cipherTextBuffer.remaining()];
+            cipherTextBuffer.get(cipherText);
+            
+            TCBeginMessage tc = TcapFactory.createTCBeginMessage();
+
+            byte[] otid = { (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256), (byte)randomGenerator.nextInt(256) };
+
+            tc.setOriginatingTransactionId(otid);
+            // Create Dialog Portion
+            DialogPortion dp = TcapFactory.createDialogPortion();
+
+            dp.setOid(true);
+            dp.setOidValue(new long[] { 0, 0, 17, 773, 1, 1, 1 });
+
+            dp.setAsn(true);
+
+            DialogRequestAPDUImpl diRequestAPDUImpl = new DialogRequestAPDUImpl();
+
+            // TODO change Application Context
+            ApplicationContextNameImpl acn = new ApplicationContextNameImpl();
+            acn.setOid(new long[] { 0, 4, 0, 0, 1, 0, 19, 2 });
+
+            diRequestAPDUImpl.setApplicationContextName(acn);
+            diRequestAPDUImpl.setDoNotSendProtocolVersion(true);
+
+            dp.setDialogAPDU(diRequestAPDUImpl);
+
+            tc.setDialogPortion(dp);
+
+            Component[] c = new Component[1];
+
+            c[0] = new InvokeImpl();
+            ((InvokeImpl)c[0]).setInvokeId(1l);
+            OperationCode oc = TcapFactory.createOperationCode();
+            oc.setLocalOperationCode(OC_DTLS_DATA);
+            ((InvokeImpl)c[0]).setOperationCode(oc);
+
+            // DATA
+            Parameter p1 = TcapFactory.createParameter();
+            p1.setTagClass(Tag.CLASS_PRIVATE);
+            p1.setPrimitive(true);
+            p1.setTag(Tag.STRING_OCTET);
+            p1.setData(cipherText);
+
+            // Encrypted data
+            Parameter _p = TcapFactory.createParameter();
+            _p.setTagClass(Tag.CLASS_UNIVERSAL);
+            _p.setTag(0x04);
+            _p.setParameters(new Parameter[] { p1 });
+            ((InvokeImpl)c[0]).setParameter(_p);
+
+            tc.setComponent(c);
+            AsnOutputStream aos = new AsnOutputStream();
+            try {
+                tc.encode(aos);
+            } catch (EncodeException ex) {
+                java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+            }
+
+            byte[] _d = aos.toByteArray();
+
+            
+            SccpDataMessage m = sccpMessageFactory.createDataMessageClass0(message.getCalledPartyAddress(), message.getCallingPartyAddress(), _d, message.getOriginLocalSsn(), false, null, null);
+            l = LongMessageRuleType.XUDT_ENABLED;
+            return new AbstractMap.SimpleEntry<>(m, l);
+                
+
+        } catch (Exception ex) {
+            java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+        return null;
+    }
+
+    
+    /**
+     * DTLS decrypt
+     * @param message
+     * @param comps TCAP components
+     * @param engine
+     * @return AbstractMap.SimpleEntry<message, result> - message and result indicator
+     */
+    public AbstractMap.SimpleEntry<SccpDataMessage, String> ss7DTLSDecrypt(SccpDataMessage message, Component[] comps, SSLEngine engine) {
+        
+        logger.debug("== ss7DTLSDecrypt ==");
+            
+        try {
+            byte[] data = message.getData();
+            
+            AsnInputStream ais = new AsnInputStream(data);
+            
+            // this should have TC message tag
+            int tag;
+            try {
+                tag = ais.readTag();
+            } catch (IOException ex) {
+                java.util.logging.Logger.getLogger(Crypto.class.getName()).log(Level.SEVERE, null, ex);
+                logger.warn("Unknown TCAP tag detected in tcapDecrypt");
+                return new AbstractMap.SimpleEntry<>(message, "Unknown TCAP tag detected in tcapDecrypt");
+            }
+            
+            byte[] message_data = null;
+                
+            for (Component comp : comps) {
+                if (comp == null) {
+                    continue;
+                }
+
+                OperationCodeImpl oc;
+
+                switch (comp.getType()) {
+                case Invoke:
+                    Invoke inv = (Invoke) comp;
+                       
+                    Parameter p = inv.getParameter();
+                    Parameter[] params = p.getParameters();
+                    
+                    if (params != null && params.length >= 1) {
+
+                        // Encrypted data
+                        Parameter p1 = params[0];
+                        message_data = p1.getData();
+                    }
+                break;
+                }
+            }
+            byte[] d = message_data;
+            
+            ByteBuffer decryptedTextBuffer = ByteBuffer.allocate(DTLS_BUFFER_SIZE);
+            boolean res = ss7DTLSDecryptBuffer(engine, ByteBuffer.wrap(d, 0, d.length), decryptedTextBuffer);
+            if (res == false) {
+                logger.warn("ss7DTLSDecrypt: Failed decryption of DTLS data");
+                return new AbstractMap.SimpleEntry<>(message, "Failed decryption of DTLS data");
+            }
+
+
+            if (decryptedTextBuffer.remaining() != 0) {
+                logger.debug("ss7DTLSDecrypt: Successful decryption of DTLS data");
+            }
+
+            byte[] decryptedText = new byte[decryptedTextBuffer.remaining()];
+            decryptedTextBuffer.get(decryptedText);
+            
+            SccpDataMessage m = sccpMessageFactory.createDataMessageClass0(message.getCalledPartyAddress(), message.getCallingPartyAddress(), decryptedText, message.getOriginLocalSsn(), false, null, null);
+            
+            return new AbstractMap.SimpleEntry<>(m, "");
+
+        } catch (Exception ex) {
+            java.util.logging.Logger.getLogger(SS7Firewall.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+        return new AbstractMap.SimpleEntry<>(message, "Failed decryption of DTLS data");
+    }
+
+    /**
+     * getGTPrefix
+     * @param gt
+     * @return gt_prefix
+     */
+    public String getGTPrefix(String gt) {
+        if (gt == null) {
+            return null;
+        }
+        return gt.substring(0, Math.min(gt.length(), 5));
+    }
 }

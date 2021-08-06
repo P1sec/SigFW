@@ -2,7 +2,7 @@
  * DTLS tests from JDK 9
 */
 
-package diameterfw;
+package sigfw.tests;
 
 /*
  * Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.

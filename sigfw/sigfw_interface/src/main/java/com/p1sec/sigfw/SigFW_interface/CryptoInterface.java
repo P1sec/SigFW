@@ -128,9 +128,10 @@ public interface CryptoInterface {
      * 
      * 
      * @param message SCCP message
+     * @param comps TCAP components
      * @param sccpMessageFactory SCCP message factory
      * @param keyPair Key Pair
      * @return pair<message, result> - message and result indicator
      */    
-    public AbstractMap.SimpleEntry<SccpDataMessage, String> tcapDecrypt(SccpDataMessage message, MessageFactoryImpl sccpMessageFactory, KeyPair keyPair);
+    public AbstractMap.SimpleEntry<SccpDataMessage, String> tcapDecrypt(SccpDataMessage message, Component[] comps, MessageFactoryImpl sccpMessageFactory, KeyPair keyPair);
 }

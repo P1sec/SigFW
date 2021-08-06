@@ -93,11 +93,13 @@ public class SS7FirewallConfig {
     public static SortedMap<String, String> tcap_oc_blacklist;
     public static SortedMap<String, String> hplmn_imsi;
     public static SortedMap<String, String> hplmn_gt;
+    public static SortedMap<String, String> fw_gt;
     public static SortedMap<String, String> map_cat2_oc_blacklist;
     public static SortedMap<Integer, String> lua_blacklist_rules;
     public static SortedMap<String, PublicKey> called_gt_encryption;
     public static SortedMap<String, KeyPair> called_gt_decryption;
     public static String encryption_autodiscovery = "false";
+    public static String dtls_encryption = "false";
     public static SortedMap<String, PublicKey> calling_gt_verify;
     public static SortedMap<String, KeyPair> calling_gt_signing;
     public static FirewallPolicy firewallPolicy = FirewallPolicy.DROP_SILENTLY;
@@ -165,7 +167,7 @@ public class SS7FirewallConfig {
      * Returns Key if value is found in SortedMap, including also simple wildcard *
      */
     public static <V> String simpleWildcardKeyFind(SortedMap<String,V> baseMap, String value) {
-        if (value == null) {
+        if (baseMap == null || value == null) {
             return null;
         }
         
@@ -324,6 +326,12 @@ public class SS7FirewallConfig {
             hplmn_gt.put(s + "*", ""); 
         }
         
+        List<String> f_gt = SS7FirewallConfig.get("$.operator_configuration.FW_GT");
+        fw_gt = new ConcurrentSkipListMap<String, String>();
+        for (final String s : f_gt) {
+            fw_gt.put(s, "");
+        }
+        
         List<String> cat2_oc_blacklist = SS7FirewallConfig.get("$.sigfw_configuration.firewall_rules.map.cat2_oc_blacklist");
         map_cat2_oc_blacklist = new ConcurrentSkipListMap<String, String>();
         for (final String s : cat2_oc_blacklist) {
@@ -401,6 +409,7 @@ public class SS7FirewallConfig {
         }
         
         encryption_autodiscovery = (String)SS7FirewallConfig.get("$.sigfw_configuration.encryption_rules.autodiscovery");
+        dtls_encryption = (String)SS7FirewallConfig.get("$.sigfw_configuration.encryption_rules.dtls_encryption");
             
         // ------------------------------------
         // ------------------------------------
