@@ -419,8 +419,8 @@ public class DiameterClientLiveInput implements ManagementEventListener, ServerL
                             int i = str.indexOf("diameter_raw");
                             while (i != -1) {
                                 //logger.debug(strLine);
-                                i += "diameter_raw\": ".length();
-                                str = str.substring(i);
+                                i += "diameter_raw\":".length();
+                                str = str.substring(i).replaceAll(" ", "");
                                 
                                 // can be also json arrray
                                 String[] items;
