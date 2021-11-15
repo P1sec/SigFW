@@ -558,8 +558,8 @@ public class SS7ClientLiveInput extends AbstractSctpBase implements ManagementEv
                     int i = str.indexOf("sccp_raw");
                     while (i != -1) {
                         //logger.debug(strLine);
-                        i += "sccp_raw\": ".length();
-                        str = str.substring(i);
+                        i += "sccp_raw\":".length();
+                        str = str.substring(i).replaceAll(" ", "");
                         
                         // can be also json arrray
                         String[] items;
