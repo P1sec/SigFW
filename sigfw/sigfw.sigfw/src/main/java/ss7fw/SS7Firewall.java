@@ -309,6 +309,7 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
 import org.mobicents.protocols.sctp.netty.NettySctpManagementImpl;
+import org.mobicents.protocols.ss7.tcap.asn.comp.OperationCodeType;
 import sigfw.common.Crypto;
 /**
  * Main SS7Firewall class. Class contains mainly static variables used to build the SS7 stacks.
@@ -1844,6 +1845,16 @@ public class SS7Firewall implements ManagementEventListener, Mtp3UserPartListene
                                     l = LongMessageRuleType.XUDT_ENABLED;
                                 }
                                 sendSccpMessage(mupReturn, dpc, opc, sls, ni, l, m);
+                                return;
+                            }
+                            
+                            // TCAP Cat1 global opcode filtering
+                            if (oc.getOperationType() == OperationCodeType.Global) {
+                                //logger.debug("TCAP OC = " + oc.getStringValue());
+                                lua_hmap.put("tcap_oc", oc.getStringValue());
+
+                                //logger.info("============ TCAP Blocked Operation Code = " + oc.getStringValue() + " ============");
+                                firewallMessage(mup, mupReturn, opc, dpc, sls, ni, lmrt, message, "TCAP FW (Cat1 global opcode): OC = " + oc.getStringValue(), lua_hmap);
                                 return;
                             }
                             
