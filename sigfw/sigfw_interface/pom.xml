@@ -15,11 +15,55 @@
             
         <restcomm.diameter.jdiameter.version>1.7.1-123</restcomm.diameter.jdiameter.version>
         <restcomm.diameter.mux.version>1.7.1-123</restcomm.diameter.mux.version>
-        <restcomm.jss7.version>8.0.112</restcomm.jss7.version>
+        <restcomm.jss7.version>8.0.112</restcomm.jss7.version>       
         <get.opt.version>1.0.9</get.opt.version>
         <picocontainer.version>1.2</picocontainer.version>
         <slf4j.version>1.7.21</slf4j.version>
     </properties>
+    
+    <repositories>
+        <repository>
+            <id>jboss-public-repository-group</id>
+            <name>JBoss Public Repository Group</name>
+            <url>https://repository.jboss.org/nexus/content/groups/public-jboss/</url>
+            <layout>default</layout>
+            <releases>
+                <enabled>true</enabled>
+                <updatePolicy>never</updatePolicy>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+                <updatePolicy>never</updatePolicy>
+            </snapshots>
+        </repository>
+        <repository>
+            <id>jboss-deprecated-repository</id>
+            <name>JBoss Deprecated Maven Repository</name>
+            <url>https://repository.jboss.org/nexus/content/repositories/deprecated/</url>
+            <layout>default</layout>
+            <releases>
+              <enabled>true</enabled>
+              <updatePolicy>never</updatePolicy>
+            </releases>
+            <snapshots>
+              <enabled>false</enabled>
+              <updatePolicy>never</updatePolicy>
+            </snapshots>
+        </repository>
+    </repositories>
+    <pluginRepositories>
+        <pluginRepository>
+            <id>jboss-public-repository-group</id>
+            <name>JBoss Public Repository Group</name>
+            <url>https://repository.jboss.org/nexus/content/groups/public-jboss/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </pluginRepository>
+    </pluginRepositories>
     
     <!--<dependencies>
         <dependency>
@@ -176,4 +220,6 @@
     </dependencyManagement>-->
     
     <name>SigFW_interface</name>
+    
+    
 </project>

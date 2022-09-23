@@ -25,6 +25,50 @@
         <picocontainer.version>20051006.102514</picocontainer.version>
         <slf4j.version>1.8.0-beta4</slf4j.version>
     </properties>
+    
+        <repositories>
+        <repository>
+            <id>jboss-public-repository-group</id>
+            <name>JBoss Public Repository Group</name>
+            <url>https://repository.jboss.org/nexus/content/groups/public-jboss/</url>
+            <layout>default</layout>
+            <releases>
+                <enabled>true</enabled>
+                <updatePolicy>never</updatePolicy>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+                <updatePolicy>never</updatePolicy>
+            </snapshots>
+        </repository>
+        <repository>
+            <id>jboss-deprecated-repository</id>
+            <name>JBoss Deprecated Maven Repository</name>
+            <url>https://repository.jboss.org/nexus/content/repositories/deprecated/</url>
+            <layout>default</layout>
+            <releases>
+              <enabled>true</enabled>
+              <updatePolicy>never</updatePolicy>
+            </releases>
+            <snapshots>
+              <enabled>false</enabled>
+              <updatePolicy>never</updatePolicy>
+            </snapshots>
+        </repository>
+    </repositories>
+    <pluginRepositories>
+        <pluginRepository>
+            <id>jboss-public-repository-group</id>
+            <name>JBoss Public Repository Group</name>
+            <url>https://repository.jboss.org/nexus/content/groups/public-jboss/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </pluginRepository>
+    </pluginRepositories>
 
     <dependencies>
         <dependency>
@@ -266,6 +310,7 @@
             <!--<scope>system</scope>
             <systemPath>${project.basedir}/src/main/resources/crypto-interface-1.0.jar</systemPath>
             -->
+            <type>jar</type>
         </dependency>
         <!--<dependency>
             <groupId>javax.ws.rs</groupId>
