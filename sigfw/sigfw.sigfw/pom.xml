@@ -97,6 +97,11 @@
             <version>${restcomm.jss7.version}</version>
         </dependency>
         <dependency>
+            <groupId>org.mobicents.protocols.ss7.tcapAnsi</groupId>
+            <artifactId>tcap-ansi-impl</artifactId>
+            <version>${restcomm.jss7.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.mobicents.protocols.ss7.map</groupId>
             <artifactId>map-api</artifactId>
             <version>${restcomm.jss7.version}</version>
@@ -238,12 +243,12 @@
         <dependency>
             <groupId>org.eclipse.jetty</groupId>
             <artifactId>jetty-server</artifactId>
-            <version>11.0.10</version>
+            <version>11.0.14</version>
         </dependency>
         <dependency>
             <groupId>org.eclipse.jetty</groupId>
             <artifactId>jetty-servlet</artifactId>
-            <version>11.0.6</version>
+            <version>11.0.14</version>
         </dependency>
         <dependency>
             <groupId>org.glassfish.jersey.core</groupId>
@@ -322,11 +327,11 @@
 	
     <dependencyManagement>
         <dependencies>
-            <dependency>
+            <!--<dependency>
                 <groupId>log4j</groupId>
                 <artifactId>log4j</artifactId>
                 <version>1.2.17</version>
-            </dependency>
+            </dependency>-->
         </dependencies>
     </dependencyManagement>
         
