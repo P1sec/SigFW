@@ -182,7 +182,7 @@ public class SS7Server extends AbstractSctpBase implements MAPDialogListener, MA
 
         // Step 4: Add Route. Remote point code is 1
         this.serverM3UAMgmt.addRoute(CLIENT_SPC, -1, -1, "RAS1"); 
-        this.serverM3UAMgmt.addRoute(SERVER_SPC, -1, -1, "RAS1");   
+        //this.serverM3UAMgmt.addRoute(SERVER_SPC, -1, -1, "RAS1");
         logger.debug("Initialized M3UA Stack ....");
     }
 
@@ -200,21 +200,22 @@ public class SS7Server extends AbstractSctpBase implements MAPDialogListener, MA
         this.sccpStack.getSccpResource().addRemoteSsn(0, CLIENT_SPC, SSN, 0, false);
 
         this.sccpStack.getRouter().addMtp3ServiceAccessPoint(1, 1, SERVER_SPC, NETWORK_INDICATOR, 0);
-        this.sccpStack.getRouter().addMtp3Destination(1, 1, CLIENT_SPC, CLIENT_SPC, 0, 255, 255);    
+        //this.sccpStack.getRouter().addMtp3Destination(1, 1, CLIENT_SPC, CLIENT_SPC, 0, 255, 255);
+        this.sccpStack.getRouter().addMtp3Destination(1, 1, minOpc, maxOpc, 0, 255, 255);
         
         this.sccpProvider = this.sccpStack.getSccpProvider();
         
         
-        this.sccpStack.getSccpResource().addRemoteSpc(1, SERVER_SPC, 0, 0);
-        this.sccpStack.getSccpResource().addRemoteSsn(1, SERVER_SPC, SSN, 0, false);
+        //this.sccpStack.getSccpResource().addRemoteSpc(1, SERVER_SPC, 0, 0);
+        //this.sccpStack.getSccpResource().addRemoteSsn(1, SERVER_SPC, SSN, 0, false);
         
         //this.sccpStack.setPreviewMode(true);
         
         // SCCP routing table
-        GlobalTitle gt = this.sccpProvider.getParameterFactory().createGlobalTitle("", 0, org.mobicents.protocols.ss7.indicator.NumberingPlan.ISDN_TELEPHONY, null, NatureOfAddress.INTERNATIONAL);
+        GlobalTitle gt = this.sccpProvider.getParameterFactory().createGlobalTitle("*", 0, org.mobicents.protocols.ss7.indicator.NumberingPlan.ISDN_TELEPHONY, null, NatureOfAddress.INTERNATIONAL);
         this.sccpStack.getRouter().addRoutingAddress(1, this.sccpProvider.getParameterFactory().createSccpAddress(RoutingIndicator.ROUTING_BASED_ON_GLOBAL_TITLE, gt, CLIENT_SPC, 0));
         
-        gt = this.sccpProvider.getParameterFactory().createGlobalTitle("", 0, org.mobicents.protocols.ss7.indicator.NumberingPlan.ISDN_TELEPHONY, null, NatureOfAddress.INTERNATIONAL);
+        gt = this.sccpProvider.getParameterFactory().createGlobalTitle("000000000000", 0, org.mobicents.protocols.ss7.indicator.NumberingPlan.ISDN_TELEPHONY, null, NatureOfAddress.INTERNATIONAL);
         this.sccpStack.getRouter().addRoutingAddress(2, this.sccpProvider.getParameterFactory().createSccpAddress(RoutingIndicator.ROUTING_BASED_ON_GLOBAL_TITLE, gt, SERVER_SPC, SSN));
         
         gt = this.sccpProvider.getParameterFactory().createGlobalTitle("*", 0, org.mobicents.protocols.ss7.indicator.NumberingPlan.ISDN_TELEPHONY, null, NatureOfAddress.INTERNATIONAL);
@@ -224,7 +225,7 @@ public class SS7Server extends AbstractSctpBase implements MAPDialogListener, MA
         
         gt = this.sccpProvider.getParameterFactory().createGlobalTitle("*", 0, org.mobicents.protocols.ss7.indicator.NumberingPlan.ISDN_TELEPHONY, null, NatureOfAddress.INTERNATIONAL);
         pattern = this.sccpProvider.getParameterFactory().createSccpAddress(RoutingIndicator.ROUTING_BASED_ON_GLOBAL_TITLE, gt, 0, 0);
-        mask = "R";
+        mask = "K";
         ((RouterImpl) this.sccpStack.getRouter()).addRule(2, RuleType.SOLITARY, LoadSharingAlgorithm.Bit0, OriginationType.REMOTE, pattern, mask, 2, -1, null, 0, null);
         
         
@@ -251,7 +252,7 @@ public class SS7Server extends AbstractSctpBase implements MAPDialogListener, MA
         this.mapProvider.getMAPServiceSupplementary().acivate();
         this.mapProvider.getMAPServiceMobility().acivate();
 
-        //this.mapStack.start();
+        this.mapStack.start();
       
         logger.debug("Initialized MAP Stack ....");
     }

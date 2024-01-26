@@ -51,9 +51,12 @@ public abstract class AbstractSctpBase/*, MAPServiceSupplementaryListener*/ {
     protected static String logFileName = "maplog.txt";
 
     // MTP Details
+    protected int minOpc = 0;
+    protected int maxOpc = 100000;
+    
     protected final int CLIENT_SPC = 1;
     protected final int SERVER_SPC = 2;
-    protected final int NETWORK_INDICATOR = 2;
+    protected final int NETWORK_INDICATOR = 0;
     protected final int SERVICE_INIDCATOR = 3; // SCCP
     protected final int SSN = 8;
 
